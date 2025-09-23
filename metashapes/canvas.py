@@ -97,4 +97,53 @@ class Canvas:
         finally:
             self.set_grid(H=_H, W=_W)
             
+    def to_parametric(self) -> str:
+        """
+        Export the canvas parameters to a parametric string.
+        Returns:
+            A string representing the canvas parameters.
+        """
+        return f"Canvas(x0={self.x0}, y0={self.y0}, Lx={self.Lx}, Ly={self.Ly}, H={self.H}, W={self.W}, spacing={self.spacing})"
+    
+    @staticmethod
+    def from_parametric(param_str: str) -> 'Canvas':
+        """
+        Creates a Canvas instance from a parametric string.
+        """
+        s = param_str.strip()
+        # Accept both "x0=..., y0=..." and "Canvas(x0=..., ...)"
+        if s.startswith("Canvas(") and s.endswith(")"):
+            s = s[len("Canvas("):-1].strip()
+
+        params = {}
+        for item in s.split(','):
+            item = item.strip()
+            if not item:
+                continue
+            if '=' not in item:
+                raise ValueError(f"Invalid parameter fragment: {item!r}")
+            key, value = item.split('=', 1)
+            key = key.strip()
+            value = value.strip()
+            try:
+                params[key] = float(value)
+            except ValueError:
+                raise ValueError(f"Invalid numeric value for {key!r}: {value!r}")
+
+        required_keys = {'x0', 'y0', 'Lx', 'Ly', 'H', 'W', 'spacing'}
+        if not required_keys.issubset(params.keys()):
+            missing = required_keys - params.keys()
+            raise ValueError(f"Missing parameters: {missing}")
+
+        return Canvas(
+            x0=params['x0'],
+            y0=params['y0'],
+            Lx=params['Lx'],
+            Ly=params['Ly'],
+            H=int(params['H']),
+            W=int(params['W']),
+            spacing=params['spacing']
+        )
+       
+            
     

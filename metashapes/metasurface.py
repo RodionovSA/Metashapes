@@ -5,6 +5,7 @@
 from typing import List, Dict, Tuple
 from .shape import Shape
 from .canvas import Canvas
+from .utils import to_wkt, from_wkt
 
 class Metasurface:
     """
@@ -14,18 +15,18 @@ class Metasurface:
     def __init__(self, 
                  shapes: List['Shape'], 
                  canvas: 'Canvas',
+                 thickness: float,
                  *,
-                 materials: List[str] = None) -> None:
+                 inverted:bool = False) -> None:
         """
         Initialize the Metasurface.
 
         Parameters:
             shapes: Collection of Shape instances describing the metasurface elements.
             canvas: Canvas instance that defines the spatial mapping for the metasurface.
-            materials: (**Not implemented**) List of material identifiers corresponding to each shape.
+            thickness: Thickness of the metasurface layer in the z-direction (same units as canvas)
+            inverted: If True, the shapes define voids in a material background; if False, they define material inclusions in a void background.
 
-        Notes:
-            If materials provided, a flag value is assigned to each material, where 0 is background.
         """
         # Normalize shapes into a list for consistent handling
         shapes = list(shapes) if shapes is not None else []
@@ -35,20 +36,14 @@ class Metasurface:
             raise TypeError("All items in shapes must be instances of Shape.")
         if not isinstance(canvas, Canvas):
             raise TypeError("canvas must be an instance of Canvas.")
-
-        #TODO: Define material mapping if materials are provided
-        if materials is not None:
-            raise NotImplementedError("Material handling is not implemented yet.")
-        
-            if len(materials) != len(shapes):
-                raise ValueError("Length of materials must match length of shapes.")
-            self._materials = {material: idx + 1 for idx, material in enumerate(set(materials))}
-            self._materials['background'] = 0
-        else:
-            self._materials = None
+        if not isinstance(inverted, bool):
+            raise TypeError("inverted must be a boolean value.")
             
         self._shapes = shapes
         self._canvas = canvas
+        self.inverted = bool(inverted)
+        self.thickness = float(thickness)
+        
 
     # Main objects
     @property
@@ -79,16 +74,11 @@ class Metasurface:
         from .utils import unary_union
         unit_cell_base = self.canvas.unit_cell
         shapes = unary_union(self.shapes)
-        return unit_cell_base.intersection(shapes)
-    
-    @property
-    def materials(self) -> Dict[str, int] | None:
-        """
-        Get the list of materials corresponding to the shapes.
-        Returns:
-            A list of material identifiers or None if not provided.
-        """
-        return self._materials
+        
+        if self.inverted:
+            return unit_cell_base.difference(shapes)
+        else:
+            return unit_cell_base.intersection(shapes)
     
     # Properties for easy access to canvas attributes
     @property
@@ -146,3 +136,35 @@ class Metasurface:
         """
         self._canvas.set_pixel_size(float(value[0]), rounding="round")
         self._canvas.set_pixel_size(float(value[1]), rounding="round")
+        
+    def to_parametric(self) -> Dict:
+        """
+        Serialize the metasurface to a parametric dictionary.
+        Returns:
+            A dictionary containing the parameters of the metasurface.
+        """
+        return {
+            "shapes": [to_wkt(s) for s in self.shapes],
+            "canvas": self.canvas.to_parametric(),
+            "thickness": self.thickness,
+            "inverted": self.inverted
+        }
+    
+    @staticmethod
+    def from_parametric(param: Dict) -> 'Metasurface':
+        """
+        Create a Metasurface instance from a parametric dictionary.
+        Parameters:
+            param: A dictionary containing the parameters of the metasurface.
+        """
+        shapes = [from_wkt(s) for s in param.get("shapes", [])]
+        canvas = Canvas.from_parametric(param.get("canvas", {}))
+        thickness = param.get("thickness", 0.0)
+        inverted = param.get("inverted", False)
+
+        return Metasurface(
+            shapes=shapes,
+            canvas=canvas,
+            thickness=thickness,
+            inverted=inverted
+        )
