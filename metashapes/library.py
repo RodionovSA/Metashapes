@@ -7,17 +7,21 @@ from typing import Tuple
 import numpy as np
 
 from .shape import Shape
+from .utils import shp
 
 # --- Simple Shapes ---
 def rectangle(center: Tuple[float, float], 
               size: Tuple[float, float], 
-              angle: float = 0.0) -> Shape:
+              angle: float = 0.0,
+              *,
+              soft_radius: float = 0.0) -> Shape:
     """
     Create a rectangle shape given its center, size and angle.
     Parameters:
         center: (cx, cy) coordinates of the rectangle center.
         size: (width, height) dimensions of the rectangle.
         angle: Rotation angle in degrees (counter-clockwise).
+        soft_radius: Radius for softening the rectangle corners. Default is 0 (sharp corners).
     Returns:
         A Shape object representing the rectangle.
     """
@@ -35,10 +39,21 @@ def rectangle(center: Tuple[float, float],
             (cx - w/2, cy + h/2)
         ])
     
+    # Rotation
     if angle != 0.0:
-        from shapely.affinity import rotate
-        poly = rotate(poly, angle, origin=center)
-    return Shape(poly)
+        from shapely import affinity
+        poly = affinity.rotate(poly, angle, origin=center)
+    
+    # Create shape object
+    poly = Shape(poly, min_width=min(w,h))
+
+    # Soften corners if requested
+    if abs(float(soft_radius)) > 0.0:
+        if abs(float(soft_radius)) > min(w, h)/2:
+            raise ValueError("soft_radius is too large for the given rectangle size.")
+        poly = shp.soften_corners(poly, radius=soft_radius)
+
+    return poly
 
 def ellipse(center: Tuple[float, float], 
             axes: Tuple[float, float],
@@ -66,15 +81,17 @@ def ellipse(center: Tuple[float, float],
 
     poly = Polygon(points)
     if angle != 0.0:
-        from shapely.affinity import rotate
-        poly = rotate(poly, angle, origin=center)
-        
-    return Shape(poly)
+        from shapely import affinity
+        poly = affinity.rotate(poly, angle, origin=center)
+
+    return Shape(poly, min_width=2*min(a,b))
 
 def ngon(center: Tuple[float, float], 
           size: float, 
           n: int,
-          angle: float = 0.0) -> Shape:
+          angle: float = 0.0,
+          *,
+          soft_radius: float = 0.0) -> Shape:
     """
     Create a regular polygon shape given its center, side length and number of sides.
     Parameters:
@@ -82,6 +99,7 @@ def ngon(center: Tuple[float, float],
         size: Length of each side of the polygon.
         n: Number of sides (vertices) of the polygon.
         angle: Rotation angle in degrees (counter-clockwise).
+        soft_radius: Radius for softening the polygon corners. Default is 0 (sharp corners).
     Returns:
         A Shape object representing the regular polygon.
     """
@@ -104,18 +122,31 @@ def ngon(center: Tuple[float, float],
               for k in range(n)]
     
     poly = Polygon(points)
+    
+    # Rotation
     if angle != 0.0:
-        from shapely.affinity import rotate
-        poly = rotate(poly, angle, origin=center)
+        from shapely import affinity
+        poly = affinity.rotate(poly, angle, origin=center)
+        
+    # Create shape object
+    poly = Shape(poly, min_width=size/(2*np.tan(np.pi / n)))
+        
+    # Soften corners if requested
+    if abs(float(soft_radius)) > 0.0:
+        if abs(float(soft_radius)) > min(size, size / (2*np.tan(np.pi / n))):
+            raise ValueError("soft_radius is too large for the given polygon size.")
+        poly = shp.soften_corners(poly, radius=soft_radius)
 
-    return Shape(poly)
+    return poly
 
 
 # --- Compound Shapes ---
 def cross(center: Tuple[float, float], 
           size: float, 
           width: float = 0.1,
-          angle: float = 0.0) -> Shape:
+          angle: float = 0.0,
+          *,
+          soft_radius: float = 0.0) -> Shape:
     """
     Create a cross shape given its center, size and arm width.
     Parameters:
@@ -139,12 +170,19 @@ def cross(center: Tuple[float, float],
 
     # Combine the two rectangles into a single shape
     cross_shape = vertical.union(horizontal)
+    cross_shape.min_width = min(width, size)
     
+    # Rotation  
     if angle != 0.0:
-        from shapely.affinity import rotate
-        cross_shape = rotate(cross_shape.geom, angle, origin=center)
+        cross_shape = shp.rotate(cross_shape, angle, origin=center)
         
-    return Shape(cross_shape)
+    # Soften corners if requested
+    if abs(float(soft_radius)) > 0.0:
+        if abs(float(soft_radius)) > min(width, size)/2:
+            raise ValueError("soft_radius is too large for the given cross size.")
+        cross_shape = shp.soften_corners(cross_shape, radius=soft_radius)
+        
+    return cross_shape
 
 def ring(center: Tuple[float, float], 
          outer_radius: Tuple[float, float], 
@@ -174,8 +212,58 @@ def ring(center: Tuple[float, float],
     inner_circle = ellipse(center, inner_radius, angle, resolution)
 
     ring_shape = outer_circle.difference(inner_circle)
-    if angle != 0.0:
-        from shapely.affinity import rotate
-        ring_shape = rotate(ring_shape.geom, angle, origin=center)
+    ring_shape.min_width = min(outer_radius[0] - inner_radius[0], 
+                               outer_radius[1] - inner_radius[1])
+    ring_shape.min_gap = 2*min(inner_radius[0], inner_radius[1])
     
-    return Shape(ring_shape)
+    # Rotation
+    if angle != 0.0:
+        ring_shape = shp.rotate(ring_shape, angle, origin=center)
+    
+    return ring_shape
+
+def moon(center: Tuple[float, float], 
+         radius: float, 
+         cut_ratio: float = 0.5,
+         angle: float = 0.0,
+         resolution: int = 64,
+         *,
+         soft_radius: float = 0.0) -> Shape:
+    """
+    Create a moon shape given its center, radius and cut ratio.
+    Parameters:
+        center: (cx, cy) coordinates of the moon center.
+        radius: Radius of the main circle.
+        cut_ratio: Ratio of the cut circle radius to the main circle radius (0 < cut_ratio < 1).
+        angle: Rotation angle in degrees (counter-clockwise).
+        resolution: Number of points to approximate the circles.
+        soft_radius: Radius for softening the polygon corners. Default is 0 (sharp corners).
+    Returns:
+        A Shape object representing the moon.
+    """
+    
+    if radius <= 0:
+        raise ValueError("radius must be positive.")
+    if cut_ratio <= 0 or cut_ratio >= 1:
+        raise ValueError("cut_ratio must be in the range (0, 1).")
+    
+    cx, cy = center
+    main_circle = ellipse(center, (radius, radius), angle, resolution)
+    cut_circle = ellipse((cx + 2*radius * (1 - cut_ratio), cy), 
+                        (radius, radius), 
+                        angle, resolution)
+    
+    moon_shape = main_circle.difference(cut_circle)
+    moon_shape.min_width = 2*radius * (1 - cut_ratio)
+    
+    # Rotation
+    if angle != 0.0:
+        moon_shape = shp.rotate(moon_shape, angle, origin=center)
+        
+    # Soften corners if requested
+    if abs(float(soft_radius)) > 0.0:
+        if abs(float(soft_radius)) > radius:
+            raise ValueError("soft_radius is too large for the given polygon size.")
+        moon_shape = shp.soften_corners(moon_shape, radius=soft_radius)
+
+    return moon_shape

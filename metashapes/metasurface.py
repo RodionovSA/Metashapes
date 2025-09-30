@@ -2,10 +2,14 @@
 
 # This module provides a Metasurface class
 
-from typing import List, Dict, Tuple
+import numpy as np
+from uuid import uuid4
+import gdstk
+import pya
+from typing import List, Dict, Tuple, Optional
 from .shape import Shape
 from .canvas import Canvas
-from .utils import to_wkt, from_wkt
+from .utils import shp
 
 class Metasurface:
     """
@@ -13,27 +17,26 @@ class Metasurface:
     It consists of multiple shapes (elements) arranged on a defined canvas in x-y plane.
     """
     def __init__(self, 
-                 shapes: List['Shape'], 
+                 shapes: 'Shape', 
                  canvas: 'Canvas',
                  thickness: float,
                  *,
-                 inverted:bool = False) -> None:
+                 inverted:bool = False,
+                 id: Optional[str] = None) -> None:
         """
         Initialize the Metasurface.
 
         Parameters:
-            shapes: Collection of Shape instances describing the metasurface elements.
+            shapes: A Shape that define the metasurface pattern.
             canvas: Canvas instance that defines the spatial mapping for the metasurface.
             thickness: Thickness of the metasurface layer in the z-direction (same units as canvas)
             inverted: If True, the shapes define voids in a material background; if False, they define material inclusions in a void background.
 
         """
-        # Normalize shapes into a list for consistent handling
-        shapes = list(shapes) if shapes is not None else []
         
         # Validate inputs
-        if not all(isinstance(s, Shape) for s in shapes):
-            raise TypeError("All items in shapes must be instances of Shape.")
+        if not isinstance(shapes, Shape):
+            raise TypeError("shapes must be an instance of Shape.")
         if not isinstance(canvas, Canvas):
             raise TypeError("canvas must be an instance of Canvas.")
         if not isinstance(inverted, bool):
@@ -43,15 +46,23 @@ class Metasurface:
         self._canvas = canvas
         self.inverted = bool(inverted)
         self.thickness = float(thickness)
+
+        self.id: str = id or f"{uuid4().hex[:10]}"
         
+        # Min width and gap
+        self._min_width = shapes.min_width
+        self._min_gap = shapes.min_gap
+        
+        if inverted:
+            self._min_width, self._min_gap = self._min_gap, self._min_width
 
     # Main objects
     @property
-    def shapes(self) -> List['Shape']:
+    def shapes(self) -> 'Shape':
         """
-        Get the list of shapes in the metasurface.
+        Get the shape in the metasurface.
         Returns:
-            A list of Shape objects.
+            A Shape object.
         """
         return self._shapes
     
@@ -71,9 +82,8 @@ class Metasurface:
         Returns:
             A Shape object representing the unit cell.
         """
-        from .utils import unary_union
         unit_cell_base = self.canvas.unit_cell
-        shapes = unary_union(self.shapes)
+        shapes = self.shapes
         
         if self.inverted:
             return unit_cell_base.difference(shapes)
@@ -137,6 +147,62 @@ class Metasurface:
         self._canvas.set_pixel_size(float(value[0]), rounding="round")
         self._canvas.set_pixel_size(float(value[1]), rounding="round")
         
+    @property
+    def min_width(self) -> Optional[float]:
+        """
+        Get the minimum width among all shapes in the metasurface.
+        Returns:
+            The minimum width value or None if not defined.
+        """
+        return self._min_width
+        
+    @property
+    def min_gap(self) -> Optional[float]:
+        """
+        Get the minimum gap among all shapes in the metasurface.
+        Returns:
+            The minimum gap value or None if not defined.
+        """
+        return self._min_gap
+        
+    def copy(self, id: str = None) -> 'Metasurface':
+        """
+        Create a copy of the metasurface.
+        Returns:
+            A new Metasurface object that is a copy of the current one.
+        """
+        return Metasurface(
+            shapes=self.shapes,
+            canvas=self.canvas,
+            thickness=self.thickness,
+            inverted=self.inverted,
+            id=id or f"{uuid4().hex[:10]}"
+        )
+        
+    def to_numpy(self) -> np.ndarray:
+        """
+        Rasterize the unit cell of the metasurface to a 2D numpy array.
+        Returns:
+            A 2D numpy array representing the rasterized unit cell.
+        """
+        return self.unit_cell.to_numpy(self.canvas)
+    
+    def to_gdstk(self) -> List[gdstk.Polygon]:
+        """
+        Convert the unit cell of the metasurface to gdstk polygons.
+        Returns:
+            A list of gdstk.Polygon objects representing the unit cell.
+        """
+        return self.unit_cell.to_gdstk()
+    
+    def to_klayout(self) -> List[pya.Polygon]:
+        """
+        Convert the unit cell of the metasurface to Klayout polygons.
+        Returns:
+            A list of pya.Polygon objects representing the unit cell.
+        """
+        return self.unit_cell.to_klayout()
+        
     def to_parametric(self) -> Dict:
         """
         Serialize the metasurface to a parametric dictionary.
@@ -144,10 +210,11 @@ class Metasurface:
             A dictionary containing the parameters of the metasurface.
         """
         return {
-            "shapes": [to_wkt(s) for s in self.shapes],
+            "shapes": shp.to_wkt(self.shapes),
             "canvas": self.canvas.to_parametric(),
             "thickness": self.thickness,
-            "inverted": self.inverted
+            "inverted": self.inverted,
+            "id": self.id
         }
     
     @staticmethod
@@ -157,14 +224,16 @@ class Metasurface:
         Parameters:
             param: A dictionary containing the parameters of the metasurface.
         """
-        shapes = [from_wkt(s) for s in param.get("shapes", [])]
+        shapes = shp.from_wkt(param.get("shapes", ))
         canvas = Canvas.from_parametric(param.get("canvas", {}))
         thickness = param.get("thickness", 0.0)
         inverted = param.get("inverted", False)
+        id = param.get("id", None)
 
         return Metasurface(
             shapes=shapes,
             canvas=canvas,
             thickness=thickness,
-            inverted=inverted
+            inverted=inverted,
+            id=id
         )

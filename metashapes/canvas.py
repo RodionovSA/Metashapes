@@ -16,17 +16,28 @@ class Canvas:
     Defines unit cell size and grid size, and do resterization. 
     """
     # world window and raster size
-    x0: float; y0: float; Lx: float; Ly: float  # lower-left (x0,y0), width/height
-    H: int; W: int;                               # rows, cols
-    spacing: float = 0.0                     # optional spacing from edges (in world units)
+    Lx: float; Ly: float   # width/height
+    H: int; W: int;        # rows, cols
+    xc: float = 0.0; yc: float = 0.0;  # center of the canvas
+    spacing: float = 0.0   # optional spacing from edges (in world units)
 
     def __post_init__(self):
         self.sx, self.sy = self.W / self.Lx, self.H / self.Ly
         self.spacing = abs(self.spacing)  # ensure non-negative
-
-        # Check spacing validity
+        
+        # Validity checks
+        if self.Lx <= 0 or self.Ly <= 0:
+            raise ValueError("Lx and Ly must be positive.")
+        if self.H <= 0 or self.W <= 0:
+            raise ValueError("H and W must be positive integers.")
+        if not isinstance(self.H, int) or not isinstance(self.W, int):
+            raise ValueError("H and W must be integers.")
         if self.spacing > self.Lx/2 or self.spacing > self.Ly/2:
             raise ValueError("Spacing is too large for the given canvas size.")
+        
+        # x0, y0 to be bottom-left corner
+        self.x0 = float(self.xc) - 0.5 * float(self.Lx)
+        self.y0 = float(self.yc) - 0.5 * float(self.Ly)
 
     def world_to_rc(self, x: np.ndarray, y: np.ndarray) -> Tuple[int, int]:
         cols = (x - self.x0) * self.sx
@@ -49,7 +60,7 @@ class Canvas:
         Return a Rectangle of the unit cell (with spacing).
         """
         return rectangle(
-            center=(self.x0 + 0.5 * self.Lx, self.y0 + 0.5 * self.Ly),
+            center=(self.xc, self.yc),
             size=(self.Lx - 2 * self.spacing, self.Ly - 2 * self.spacing),
             angle=0.0
         )
@@ -103,7 +114,7 @@ class Canvas:
         Returns:
             A string representing the canvas parameters.
         """
-        return f"Canvas(x0={self.x0}, y0={self.y0}, Lx={self.Lx}, Ly={self.Ly}, H={self.H}, W={self.W}, spacing={self.spacing})"
+        return f"Canvas(Lx={self.Lx}, Ly={self.Ly}, H={self.H}, W={self.W}, xc={self.xc}, yc={self.yc}, spacing={self.spacing})"
     
     @staticmethod
     def from_parametric(param_str: str) -> 'Canvas':
@@ -130,18 +141,18 @@ class Canvas:
             except ValueError:
                 raise ValueError(f"Invalid numeric value for {key!r}: {value!r}")
 
-        required_keys = {'x0', 'y0', 'Lx', 'Ly', 'H', 'W', 'spacing'}
+        required_keys = {'Lx', 'Ly', 'H', 'W', 'xc', 'yc', 'spacing'}
         if not required_keys.issubset(params.keys()):
             missing = required_keys - params.keys()
             raise ValueError(f"Missing parameters: {missing}")
 
         return Canvas(
-            x0=params['x0'],
-            y0=params['y0'],
             Lx=params['Lx'],
             Ly=params['Ly'],
             H=int(params['H']),
             W=int(params['W']),
+            xc=params['xc'],
+            yc=params['yc'],
             spacing=params['spacing']
         )
        

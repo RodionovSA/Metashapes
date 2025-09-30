@@ -4,6 +4,7 @@
 
 import numpy as np
 import gdstk
+import pya
 
 from skimage.draw import polygon as sk_polygon
 from skimage import measure
@@ -17,7 +18,7 @@ from typing import TYPE_CHECKING, List
 from .canvas import Canvas  
 
 #Numpy
-def shapely_to_numpy(geom, 
+def shapely_to_numpy(geom: 'BaseGeometry', 
                      canvas: 'Canvas',
                      *,
                      pixel_size: float = None) -> np.ndarray:
@@ -178,7 +179,7 @@ def numpy_to_shapely(img: np.ndarray,
     return result
 
 # gdstk
-def shapely_to_gdstk(geom) -> List[gdstk.Polygon]:
+def shapely_to_gdstk(geom: 'BaseGeometry') -> List[gdstk.Polygon]:
     """
     Convert a shapely geometry to a gdstk polygon or a list of polygons.
     """
@@ -248,8 +249,34 @@ def gdstk_to_shapely(poly: List[gdstk.Polygon]) -> 'BaseGeometry':
     return shapely.geometry.MultiPolygon(out_polys)
     
 #Klayout
-def shapely_to_klayout(geom):
-    raise NotImplementedError("KLayout conversion not implemented yet.")
+def shapely_to_klayout(geom: 'BaseGeometry') -> List['pya.Polygon']:
+    """
+    Convert a shapely geometry to a KLayout polygon or a list of polygons.
+    """
+    # Handle empty geometries
+    if geom.is_empty:
+        return []
+    
+    parts = getattr(geom, 'geoms', [geom])
+    dreg = pya.Region()
+    for g in parts:
+        # Get exterior
+        ex = np.asarray(g.exterior.coords, dtype=float)
+        ex = ex[:-1]
+        dpoly = pya.DPolygon([pya.DPoint(x, y) for x, y in ex])
+        dreg += pya.Region(dpoly)
+        
+        # Add holes
+        for ring in g.interiors:
+            hole = np.asarray(ring.coords, dtype=float)[:-1]
+            hpoly = pya.DPolygon([pya.DPoint(x, y) for x, y in hole])
+            dreg -= pya.Region(hpoly)
 
+   
+    dreg = dreg.merged()
+    out: List[pya.Polygon] = [p for p in dreg.each()]
+
+    return out 
+    
 def klayout_to_shapely(kl_poly) -> 'BaseGeometry':
     raise NotImplementedError("KLayout conversion not implemented yet.")

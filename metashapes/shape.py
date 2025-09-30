@@ -1,30 +1,94 @@
 # metashapes/shape.py
 
-import shapely
-from shapely import geometry
+# This module defines the Shape class, which wraps shapely geometries and provides
+# methods for conversion to/from various formats, as well as delegation of shapely methods.
+
 from shapely.geometry.base import BaseGeometry
 
 import numpy as np
 import gdstk
+import pya
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Mapping, Iterable, List
 if TYPE_CHECKING:
     from .canvas import Canvas  # type-only
 
-@dataclass(frozen=True)
 class Shape:
     """
     A class representing a geometric shape.
     """
-    geom: BaseGeometry
-    
-    def __post_init__(self):
-        if not isinstance(self.geom, BaseGeometry):
+    def __init__(self, geom: BaseGeometry, *, min_width: float = None, min_gap: float = None) -> None:
+        if not isinstance(geom, BaseGeometry):
             raise TypeError("geom must be an instance of shapely.geometry.base.BaseGeometry")
-        if self.geom.is_empty:
+        if geom.is_empty:
             raise ValueError("geom cannot be empty")
-        object.__setattr__(self, 'geom', self.geom.simplify(0.0))  # Ensure valid geometry
+        
+        self._geom = geom.simplify(0.0)  # Ensure valid geometry
+        self._min_width = min_width
+        self._min_gap = min_gap
+
+    # --- Properties ---
+    @property
+    def geom(self) -> BaseGeometry:
+        """
+        Get the geometry of the shape.
+        Returns:
+            A shapely BaseGeometry object.
+        """
+        return self._geom
+    
+    @geom.setter
+    def geom(self, value: BaseGeometry):
+        """
+        Set the geometry of the shape.
+        Parameters:
+            value: A shapely BaseGeometry object.
+        """
+        if not isinstance(value, BaseGeometry):
+            raise TypeError("geom must be an instance of shapely.geometry.base.BaseGeometry")
+        if value.is_empty:
+            raise ValueError("geom cannot be empty")
+        self._geom = value.simplify(0.0)  # Ensure valid geometry
+    
+    @property
+    def min_width(self) -> float:
+        """
+        Get the minimum feature size for fabrication.
+        Returns:
+            The minimum width as a float, or None if not set.
+        """
+        return self._min_width
+    
+    @min_width.setter
+    def min_width(self, value: float):
+        """
+        Set the minimum feature size for fabrication.
+        Parameters:
+            value: The minimum width as a float. Must be positive or None to unset.
+        """
+        if value is not None and value <= 0:
+            raise ValueError("min_width must be positive or None.")
+        self._min_width = float(value)
+
+    @property
+    def min_gap(self) -> float:
+        """
+        Get the minimum gap size for fabrication.
+        Returns:
+            The minimum gap as a float, or None if not set.
+        """
+        return self._min_gap
+    
+    @min_gap.setter
+    def min_gap(self, value: float):
+        """
+        Set the minimum gap size for fabrication.
+        Parameters:
+            value: The minimum gap as a float. Must be positive or None to unset.
+        """
+        if value is not None and value <= 0:
+            raise ValueError("min_gap must be positive or None.")
+        self._min_gap = float(value)
     
     # Numpy
     def to_numpy(self, canvas: 'Canvas') -> np.ndarray:
@@ -93,7 +157,7 @@ class Shape:
         return Shape(gdstk_to_shapely(poly))
 
     # KLayout
-    def to_klayout(self):
+    def to_klayout(self) -> List[pya.Polygon]:
         """
         Convert the shape to a KLayout polygon.
         """
