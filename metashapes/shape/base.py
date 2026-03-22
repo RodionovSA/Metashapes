@@ -6,7 +6,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+import numbers
 import numpy as np
+import torch
+
 from shapely.geometry.base import BaseGeometry
 from metashapes.canvas import Canvas
 
@@ -128,7 +131,8 @@ class Shape(ABC):
         Convert this Shape into a Shapely geometry.
         """
         from metashapes.adapters import shape_to_shapely
-        return shape_to_shapely(self)
+        shape_plain = Shape.from_parametric(self.to_parametric())
+        return shape_to_shapely(shape_plain)
     
     def to_numpy(self, 
                  canvas: Canvas, 
@@ -149,3 +153,110 @@ class Shape(ABC):
         """
         from metashapes.adapters import shape_to_numpy
         return shape_to_numpy(self, canvas, dtype=dtype, soft=soft, soft_mode=soft_mode, softness=softness)
+    
+    def to_torch(
+        self,
+        canvas: Canvas,
+        *,
+        dtype: torch.dtype = torch.float32,
+        device: str | torch.device = "cpu",
+        soft: bool = True,
+        soft_mode: str = "sigmoid",
+        softness: float | torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Rasterize this Shape into a torch mask on the given canvas.
+
+        Parameters:
+            canvas: The canvas to rasterize onto.
+            dtype: Torch dtype of the output mask.
+            device: Torch device.
+            soft: If True, return a soft mask instead of a hard binary mask.
+            soft_mode: "sigmoid" (support differentiable optimization) or "fourier" (support anti-aliasing). 
+            softness: Edge smoothing scale in world units. If None, defaults to one pixel.
+        
+        Returns:
+            Tensor of shape (H, W).
+        
+        Notes:
+            soft_mode behavior:
+                - "sigmoid": Signed-distance sigmoid smoothing. Intended for
+                differentiable optimization and preserves gradient flow from
+                shape parameters to the mask. Smaller `softness` makes the mask
+                sharper but can lead to vanishing gradients, while larger
+                `softness` gives smoother gradients but blurs geometry more.
+                - "fourier": Gaussian low-pass filtering of a hard mask in Fourier
+                space. Useful for anti-aliasing and smooth visual filtering, but
+                generally not suitable for gradient-based optimization because
+                hard thresholding largely destroys gradients before filtering.
+        """
+        from metashapes.adapters import shape_to_torch
+        return shape_to_torch(
+            self,
+            canvas,
+            dtype=dtype,
+            device=device,
+            soft=soft,
+            soft_mode=soft_mode,
+            softness=softness,
+        )
+    
+def to_plain_data(x: Any):
+    """
+    Convert values to plain Python-serializable data.
+
+    Rules:
+        - Python scalars stay unchanged
+        - torch scalar tensors -> Python scalar
+        - torch vectors/matrices -> nested Python lists
+        - NumPy scalars -> Python scalar
+        - NumPy arrays -> nested Python lists
+        - tuples/lists -> recursively converted, preserving container type
+    """
+    if isinstance(x, numbers.Number):
+        return x
+
+    if isinstance(x, torch.Tensor):
+        x = x.detach().cpu()
+        if x.ndim == 0:
+            return x.item()
+        return x.tolist()
+
+    if isinstance(x, np.ndarray):
+        if x.ndim == 0:
+            return x.item()
+        return x.tolist()
+
+    if isinstance(x, tuple):
+        return tuple(to_plain_data(v) for v in x)
+
+    if isinstance(x, list):
+        return [to_plain_data(v) for v in x]
+
+    if isinstance(x, dict):
+        return {k: to_plain_data(v) for k, v in x.items()}
+
+    return x
+
+def to_plain_scalar(x: Any):
+    """
+    Convert scalar-like values to a plain Python scalar.
+
+    Accepts:
+        - Python/NumPy scalars
+        - 0D torch tensors
+        - 1-element tensors / arrays / lists / tuples
+    """
+    x = to_plain_data(x)
+
+    if isinstance(x, tuple):
+        if len(x) != 1:
+            raise ValueError(f"Expected scalar-like value, got tuple {x}")
+        return x[0]
+
+    if isinstance(x, list):
+        if len(x) != 1:
+            raise ValueError(f"Expected scalar-like value, got list {x}")
+        return x[0]
+
+    return x

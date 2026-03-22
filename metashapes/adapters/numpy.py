@@ -358,11 +358,6 @@ def _point_in_convex_polygon(x, y, vertices: np.ndarray) -> np.ndarray:
 def _length(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     return np.sqrt(x * x + y * y)
 
-
-def _sdf_circle(x: np.ndarray, y: np.ndarray, radius) -> np.ndarray:
-    return _length(x, y) - radius
-
-
 def _sdf_box(x: np.ndarray, y: np.ndarray, hx, hy) -> np.ndarray:
     """
     Signed distance to axis-aligned box centered at origin,
@@ -374,14 +369,6 @@ def _sdf_box(x: np.ndarray, y: np.ndarray, hx, hy) -> np.ndarray:
     outside = _length(np.maximum(qx, 0.0), np.maximum(qy, 0.0))
     inside = np.minimum(np.maximum(qx, qy), 0.0)
     return outside + inside
-
-
-def _smooth_min(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    return np.minimum(a, b)
-
-
-def _smooth_max(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    return np.maximum(a, b)
 
 def _dilate_mask(mask: np.ndarray, radius: float, canvas: Canvas) -> np.ndarray:
     """

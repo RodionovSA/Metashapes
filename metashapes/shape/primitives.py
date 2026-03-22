@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .base import Shape
+from .base import Shape, to_plain_data, to_plain_scalar
 
 
 @dataclass(slots=True)
@@ -32,9 +32,9 @@ class Rectangle(Shape):
     def to_parametric(self) -> dict:
         return {
             "type": "Rectangle",
-            "center": list(self.center),
-            "size": list(self.size),
-            "angle": self.angle,
+            "center": to_plain_data(self.center),
+            "size": to_plain_data(self.size),
+            "angle": to_plain_scalar(self.angle),
         }
         
     @classmethod
@@ -73,14 +73,14 @@ class Ellipse(Shape):
     def to_parametric(self) -> dict:
         return {
             "type": "Ellipse",
-            "center": list(self.center),
-            "axes": list(self.axes),
-            "angle": self.angle,
-            "resolution": self.resolution,
+            "center": to_plain_data(self.center),
+            "axes": to_plain_data(self.axes),
+            "angle": to_plain_scalar(self.angle),
+            "resolution": int(self.resolution),
         }
         
     @classmethod
-    def from_parametric(cls, data: dict) -> "Rectangle":
+    def from_parametric(cls, data: dict) -> "Ellipse":
         return cls(
             center=tuple(data["center"]),
             axes=tuple(data["axes"]),
@@ -113,10 +113,10 @@ class RegularPolygon(Shape):
     def to_parametric(self) -> dict:
         return {
             "type": "RegularPolygon",
-            "center": list(self.center),
-            "n": self.n,
-            "side_length": self.side_length,
-            "angle": self.angle,
+            "center": to_plain_data(self.center),
+            "n": int(self.n),
+            "side_length": to_plain_data(self.side_length),
+            "angle": to_plain_scalar(self.angle),
         }
         
     @classmethod
@@ -152,10 +152,10 @@ class Cross(Shape):
     def to_parametric(self) -> dict:
         return {
             "type": "Cross",
-            "center": list(self.center),
-            "size": self.size,
-            "width": self.width,
-            "angle": self.angle,
+            "center": to_plain_data(self.center),
+            "size": to_plain_scalar(self.size),
+            "width": to_plain_scalar(self.width),
+            "angle": to_plain_scalar(self.angle),
         }
         
     @classmethod
@@ -199,11 +199,11 @@ class Ring(Shape):
     def to_parametric(self) -> dict:
         return {
             "type": "Ring",
-            "center": list(self.center),
-            "outer_axes": list(self.outer_axes),
-            "inner_axes": list(self.inner_axes),
-            "angle": self.angle,
-            "resolution": self.resolution,
+            "center": to_plain_data(self.center),
+            "outer_axes": to_plain_data(self.outer_axes),
+            "inner_axes": to_plain_data(self.inner_axes),
+            "angle": to_plain_scalar(self.angle),
+            "resolution": int(self.resolution),
         }
         
     @classmethod
@@ -244,11 +244,11 @@ class Moon(Shape):
     def to_parametric(self) -> dict:
         return {
             "type": "Moon",
-            "center": list(self.center),
-            "radius": self.radius,
-            "cut_ratio": self.cut_ratio,
-            "angle": self.angle,
-            "resolution": self.resolution,
+            "center": to_plain_data(self.center),
+            "radius": to_plain_scalar(self.radius),
+            "cut_ratio": to_plain_scalar(self.cut_ratio),
+            "angle": to_plain_scalar(self.angle),
+            "resolution": int(self.resolution),
         }
         
     @classmethod
@@ -287,10 +287,10 @@ class RoundedRectangle(Shape):
     def to_parametric(self) -> dict:
         return {
             "type": "RoundedRectangle",
-            "center": list(self.center),
-            "size": list(self.size),
-            "radius": self.radius,
-            "angle": self.angle,
+            "center": to_plain_data(self.center),
+            "size": to_plain_data(self.size),
+            "radius": to_plain_scalar(self.radius),
+            "angle": to_plain_scalar(self.angle),
         }
         
     @classmethod
@@ -330,11 +330,11 @@ class RoundedRegularPolygon(Shape):
     def to_parametric(self) -> dict:
         return {
             "type": "RoundedRegularPolygon",
-            "center": list(self.center),
-            "n": self.n,
-            "side_length": self.side_length,
-            "radius": self.radius,
-            "angle": self.angle,
+            "center": to_plain_data(self.center),
+            "n": int(self.n),
+            "side_length": to_plain_scalar(self.side_length),
+            "radius": to_plain_scalar(self.radius),
+            "angle": to_plain_scalar(self.angle),
         }
         
     @classmethod
@@ -373,11 +373,11 @@ class RoundedCross(Shape):
     def to_parametric(self) -> dict:
         return {
             "type": "RoundedCross",
-            "center": list(self.center),
-            "size": self.size,
-            "width": self.width,
-            "radius": self.radius,
-            "angle": self.angle,
+            "center": to_plain_data(self.center),
+            "size": to_plain_scalar(self.size),
+            "width": to_plain_scalar(self.width),
+            "radius": to_plain_scalar(self.radius),
+            "angle": to_plain_scalar(self.angle),
         }
         
     @classmethod
@@ -420,12 +420,12 @@ class RoundedMoon(Shape):
     def to_parametric(self) -> dict:
         return {
             "type": "RoundedMoon",
-            "center": list(self.center),
-            "radius": self.radius,
-            "cut_ratio": self.cut_ratio,
-            "rounding_radius": self.rounding_radius,
-            "angle": self.angle,
-            "resolution": self.resolution,
+            "center": to_plain_data(self.center),
+            "radius": to_plain_scalar(self.radius),
+            "cut_ratio": to_plain_scalar(self.cut_ratio),
+            "rounding_radius": to_plain_scalar(self.rounding_radius),
+            "angle": to_plain_scalar(self.angle),
+            "resolution": int(self.resolution),
         }
         
     @classmethod
