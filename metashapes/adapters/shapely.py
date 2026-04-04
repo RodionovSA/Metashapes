@@ -4,6 +4,7 @@
 from __future__ import annotations
 from typing import Literal
 
+import shapely
 from shapely.affinity import rotate as shp_rotate
 from shapely.affinity import scale as shp_scale
 from shapely.affinity import translate as shp_translate
@@ -16,8 +17,9 @@ from metashapes.shape.base import Shape
 import metashapes.shape.primitives as prim
 from metashapes.shape.boolean import Union, Intersection, Difference
 from metashapes.shape.transforms import Translate, Rotate, Scale
+from metashapes.canvas import Canvas
 
-
+# ---- Shape to Shapely ---- 
 def shape_to_shapely(shape: Shape) -> BaseGeometry:
     """
     Convert a symbolic Shape into a Shapely geometry.
@@ -39,9 +41,6 @@ def shape_to_shapely(shape: Shape) -> BaseGeometry:
 
     if isinstance(shape, prim.Moon):
         return _moon_to_shapely(shape)
-
-    if isinstance(shape, prim.RoundedRegularPolygon):
-        return _rounded_regular_polygon_to_shapely(shape)
 
     if isinstance(shape, prim.RoundedCross):
         return _rounded_cross_to_shapely(shape)
@@ -184,20 +183,6 @@ def _moon_to_shapely(shape: prim.Moon) -> BaseGeometry:
     return geom
 
 
-def _rounded_regular_polygon_to_shapely(shape: prim.RoundedRegularPolygon) -> BaseGeometry:
-    base = _regular_polygon_to_shapely(
-        prim.RegularPolygon(
-            center=shape.center,
-            n=shape.n,
-            side_length=shape.side_length,
-            angle=shape.angle,
-        )
-    )
-    if shape.radius == 0:
-        return base
-    return round_corners(base, radius=shape.radius, mode="inner")
-
-
 def _rounded_cross_to_shapely(shape: prim.RoundedCross) -> BaseGeometry:
     base = _cross_to_shapely(
         prim.Cross(center=shape.center, size=shape.size, width=shape.width, angle=shape.angle)
@@ -221,6 +206,19 @@ def _rounded_moon_to_shapely(shape: prim.RoundedMoon) -> BaseGeometry:
         return base
     return round_corners(base, radius=shape.rounding_radius, mode="inner")
 
+# ---- Shapely to numpy ---- 
+def shapely_to_numpy(geom: 'BaseGeometry', canvas: 'Canvas') -> np.ndarray:
+    if geom.is_empty:
+        return np.zeros((canvas.H, canvas.W), dtype=bool)
+
+    xs, ys = canvas.grid()
+    xs = np.asarray(xs)
+    ys = np.asarray(ys)
+
+    mask = shapely.contains_xy(geom, xs, ys) | shapely.intersects_xy(geom.boundary, xs, ys)
+    return np.asarray(mask, dtype=bool)
+
+# ---- Helpers ---- 
 RoundMode = Literal["inner", "outer", "both"]
 
 def round_corners(

@@ -17,43 +17,16 @@ from shapely.geometry.base import BaseGeometry
 from typing import TYPE_CHECKING, List
 from .canvas import Canvas  
 
-#Numpy
-def shapely_to_numpy(geom: 'BaseGeometry', 
-                     canvas: 'Canvas',
-                     *,
-                     pixel_size: float = None) -> np.ndarray:
-    """
-    Rasterize a shapely geometry onto a numpy array based on the provided canvas.
-    If pixel_size is provided, temporarily adjust canvas to match the target pixel size.
-    """
-    # In the case pixel_size is provided, temporarily adjust canvas
-    if pixel_size is not None and pixel_size > 0:
-        with canvas.temporary_pixel_size(pixel_size):
-            img = np.zeros((canvas.H, canvas.W), dtype=bool)
-            
-    else:
-        img = np.zeros((canvas.H, canvas.W), dtype=bool)
-    
-    # Handle empty geometries
+def shapely_to_numpy(geom: 'BaseGeometry', canvas: 'Canvas') -> np.ndarray:
     if geom.is_empty:
-        return img
-    
-    parts = getattr(geom, 'geoms', [geom])
-    for g in parts:
-        # fill exterior
-        ex = np.asarray(g.exterior.coords)
-        rr, cc = sk_polygon(*canvas.world_to_rc(ex[:, 0], ex[:, 1]), 
-                                shape=img.shape)
-        img[rr, cc] = 1
-        
-        # carve holes
-        for ring in g.interiors:
-            ir = np.asarray(ring.coords)
-            rr, cc = sk_polygon(*canvas.world_to_rc(ir[:, 0], ir[:, 1]), 
-                                    shape=img.shape)
-            img[rr, cc] = 0
+        return np.zeros((canvas.H, canvas.W), dtype=bool)
 
-    return img
+    xs, ys = canvas.grid()
+    xs = np.asarray(xs)
+    ys = np.asarray(ys)
+
+    mask = shapely.contains_xy(geom, xs, ys) | shapely.intersects_xy(geom.boundary, xs, ys)
+    return np.asarray(mask, dtype=bool)
 
 def numpy_to_shapely(img: np.ndarray, 
                      canvas: 'Canvas',
