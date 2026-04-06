@@ -36,6 +36,14 @@ class GeneratorConfig:
     # parameter ranges for specific shapes (overrides global ones)
     shape_param_ranges: dict[str, dict[str, tuple[float, float]]] = field(default_factory=dict)
 
+    # canvas size sampling
+    # If set, overrides the canvas passed to generate() for each cell.
+    # fixed_canvas_Lx / fixed_canvas_Ly take priority over the range fields.
+    fixed_canvas_Lx: float | None = None
+    fixed_canvas_Ly: float | None = None
+    canvas_Lx_range: tuple[float, float] | None = None
+    canvas_Ly_range: tuple[float, float] | None = None
+
     # geometry constraints
     min_shape_size: float | None = None
     min_feature_size: float | None = None
@@ -76,3 +84,16 @@ class GeneratorConfig:
 
         if self.min_gap is not None and self.min_gap < 0:
             raise ValueError("min_gap must be >= 0")
+
+        if self.fixed_canvas_Lx is not None and self.fixed_canvas_Lx <= 0:
+            raise ValueError("fixed_canvas_Lx must be > 0")
+        if self.fixed_canvas_Ly is not None and self.fixed_canvas_Ly <= 0:
+            raise ValueError("fixed_canvas_Ly must be > 0")
+        if self.canvas_Lx_range is not None:
+            lo, hi = self.canvas_Lx_range
+            if lo <= 0 or hi <= 0 or lo > hi:
+                raise ValueError("canvas_Lx_range must be (lo, hi) with 0 < lo <= hi")
+        if self.canvas_Ly_range is not None:
+            lo, hi = self.canvas_Ly_range
+            if lo <= 0 or hi <= 0 or lo > hi:
+                raise ValueError("canvas_Ly_range must be (lo, hi) with 0 < lo <= hi")

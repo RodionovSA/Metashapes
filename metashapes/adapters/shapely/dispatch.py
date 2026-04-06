@@ -18,6 +18,7 @@ from .quads import (
 from .polygons import regular_polygon_to_shapely
 from .conics import ellipse_to_shapely
 from .junctions import cross_to_shapely, tshape_to_shapely
+from .periodic import stripe_to_shapely
 from .booleans import (
     union_to_shapely,
     intersection_to_shapely,
@@ -50,6 +51,9 @@ def shape_to_shapely(shape: Shape) -> BaseGeometry:
 
     if isinstance(shape, prim.TShape):
         return tshape_to_shapely(shape)
+
+    if isinstance(shape, prim.Stripe):
+        return stripe_to_shapely(shape)
 
     if isinstance(shape, Union):
         return union_to_shapely(shape, shape_to_shapely)

@@ -13,6 +13,7 @@ requires-python = ">=3.9"
 authors = [{ name = "RodionovSA" }]
 license = { text = "MIT" }  # or your license
 dependencies = [
+    "pyyaml>=6.0",
 ]
 
 [project.urls]

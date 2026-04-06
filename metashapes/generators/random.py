@@ -20,6 +20,7 @@ from metashapes.canvas import Canvas
 from metashapes.shape.primitives import Rectangle
 from metashapes import Shape
 from metashapes.adapters.shapely import remove_holes
+from metashapes.utils import periodic_shift_skipped
 
 
 @dataclass(slots=True)
@@ -62,7 +63,14 @@ class RandomUnitCellGenerator(UnitCellGenerator):
             accepted_shapes.append(shape)
 
         combined_shape = self._combine_shapes(accepted_shapes)
-        cell = UnitCell(combined_shape, canvas)
+
+        # Aggregate periodic shifts from all accepted shapes so the UnitCell
+        # knows which directions should not be clipped at the boundary.
+        periodic_shifts: set[tuple[int, int]] = set()
+        for s in accepted_shapes:
+            periodic_shifts |= s.allowed_self_periodic_shifts
+
+        cell = UnitCell(combined_shape, canvas, periodic_shifts=periodic_shifts)
         return cell
     
     def _sample_shape_with_constraints(self, accepted_shapes: list, canvas: "Canvas"):
@@ -90,7 +98,8 @@ class RandomUnitCellGenerator(UnitCellGenerator):
         # Check that shape does not have features smaller than min_feature_size
         min_feature_size = self.config.min_feature_size
         if min_feature_size is not None:
-            if candidate.min_feature_size < min_feature_size:
+            fs = candidate.min_feature_size
+            if fs is not None and fs < min_feature_size:
                 return False
         
         # Check minimum gap to already accepted shapes
@@ -102,7 +111,7 @@ class RandomUnitCellGenerator(UnitCellGenerator):
         # candidate vs its own periodic images
         allowed = candidate.allowed_self_periodic_shifts
         for ix, iy in shifts:
-            if (ix, iy) in allowed:
+            if periodic_shift_skipped(ix, iy, allowed):
                 continue
 
             shifted = translate(candidate_geom, xoff=ix * canvas.Lx, yoff=iy * canvas.Ly)

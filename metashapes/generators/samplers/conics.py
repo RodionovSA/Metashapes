@@ -35,18 +35,21 @@ class EllipseSampler(ShapeSampler):
         angle_range = get_param_range(config, shape_name, "angle")
         center_range = get_param_range(config, shape_name, "center")
 
+        x0, y0, x1, y1 = canvas.inner_bounds
+        iw, ih = x1 - x0, y1 - y0
+
         for _ in range(config.max_tries_per_shape):
             ax, ay = resolve_pair_param(
                 rng,
                 fixed_value=fixed_axes,
                 user_range=axes_range,
                 default_x_range=intersect_ranges(
-                    (min_size, canvas.Lx),
-                    (min_feature, canvas.Lx),
+                    (min_size, iw),
+                    (min_feature, iw),
                 ),
                 default_y_range=intersect_ranges(
-                    (min_size, canvas.Ly),
-                    (min_feature, canvas.Ly),
+                    (min_size, ih),
+                    (min_feature, ih),
                 ),
             )
 
@@ -64,15 +67,15 @@ class EllipseSampler(ShapeSampler):
             dx = abs(hx * np.cos(theta)) + abs(hy * np.sin(theta))
             dy = abs(hx * np.sin(theta)) + abs(hy * np.cos(theta))
 
-            if dx > 0.5 * canvas.Lx or dy > 0.5 * canvas.Ly:
+            if dx > iw / 2 or dy > ih / 2:
                 continue
 
             cx, cy = sample_center_in_bounds(
                 rng,
                 fixed_center=fixed_center,
                 center_range=center_range,
-                x_bounds=(-0.5 * canvas.Lx + dx, 0.5 * canvas.Lx - dx),
-                y_bounds=(-0.5 * canvas.Ly + dy, 0.5 * canvas.Ly - dy),
+                x_bounds=(x0 + dx, x1 - dx),
+                y_bounds=(y0 + dy, y1 - dy),
             )
 
             return Ellipse(

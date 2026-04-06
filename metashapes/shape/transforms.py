@@ -51,7 +51,16 @@ class Rotate(Shape):
     shape: Shape
     angle: Any
     origin: tuple[Any, Any] = (0.0, 0.0)
-    
+
+    def __post_init__(self) -> None:
+        allowed = self.shape.allowed_self_periodic_shifts
+        if allowed:
+            raise ValueError(
+                f"{type(self.shape).__name__} has periodic directions "
+                f"{allowed} and cannot be rotated — rotation would break "
+                f"the axis-aligned periodicity."
+            )
+
     def sdf(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         angle = torch.as_tensor(self.angle, dtype=x.dtype, device=x.device)
         ox = torch.as_tensor(self.origin[0], dtype=x.dtype, device=x.device)

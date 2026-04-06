@@ -92,6 +92,13 @@ class Shape(ABC):
         angle: Any,
         origin: tuple[Any, Any] = (0.0, 0.0),
     ) -> "Shape":
+        allowed = self.allowed_self_periodic_shifts
+        if allowed:
+            raise ValueError(
+                f"{type(self).__name__} has periodic directions "
+                f"{allowed} and cannot be rotated — rotation would break "
+                f"the axis-aligned periodicity."
+            )
         from .transforms import Rotate
         return Rotate(self, angle=angle, origin=origin)
 
@@ -230,6 +237,9 @@ def to_plain_data(x: Any):
         - NumPy arrays -> nested Python lists
         - tuples/lists -> recursively converted, preserving container type
     """
+    if isinstance(x, np.generic):
+        return x.item()
+    
     if isinstance(x, numbers.Number):
         return x
 
