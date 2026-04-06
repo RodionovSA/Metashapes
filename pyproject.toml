@@ -5,20 +5,40 @@ requires = ["setuptools>=70", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "Metashapes"
+name = "metashapes"
 version = "0.1.0"
-description = "Geometry utilities for metasurfaces and layout (Shapely/KLayout/gdstk)"
+description = "2D shape library for metasurface design: SDF-based primitives, boolean operations, random generation, and GDS/Shapely/NumPy export"
 readme = "README.md"
 requires-python = ">=3.9"
-authors = [{ name = "RodionovSA" }]
-license = { text = "MIT" }  # or your license
+authors = [{ name = "Sergei Rodionov" }]
+license = { file = "LICENSE" }
+keywords = ["metasurface", "photonics", "nanophotonics", "geometry", "SDF", "GDS", "shapely"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
+    "numpy>=1.26",
+    "torch>=2.0",
+    "shapely>=2.0",
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+gds = ["gdstk"]
+klayout = ["klayout"]
+dev = ["pytest", "matplotlib", "jupyter"]
+
 [project.urls]
 Homepage = "https://github.com/RodionovSA/Metashapes"
+Repository = "https://github.com/RodionovSA/Metashapes"
 
-# If you use a src/ layout, keep this. If your package is top-level, remove this block.
 [tool.setuptools.packages.find]
 include = ["metashapes*"]
