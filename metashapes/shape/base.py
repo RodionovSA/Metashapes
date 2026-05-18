@@ -114,7 +114,17 @@ class Shape(nn.Module):
             raise ValueError("Missing 'type' in shape parametric data")
 
         if cls is not Shape:
-            raise NotImplementedError(f"{cls.__name__} must define from_parametric")
+            # Generic reconstruction for primitives that don't override from_parametric.
+            # Nested dicts with a "type" key are child shapes; reconstruct them recursively.
+            kwargs = {}
+            for key, val in data.items():
+                if key == "type":
+                    continue
+                if isinstance(val, dict) and "type" in val:
+                    kwargs[key] = Shape.from_parametric(val)
+                else:
+                    kwargs[key] = val
+            return cls(**kwargs)
 
         try:
             shape_cls = SHAPE_REGISTRY[shape_type]

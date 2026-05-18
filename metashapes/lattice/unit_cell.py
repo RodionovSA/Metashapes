@@ -51,8 +51,8 @@ class UnitCell(nn.Module):
         (x0, y0), (x1, y1) = shape.bounds()
 
         # the four bbox corners, mapped to fractional lattice coords
-        corners_x = torch.tensor([x0, x0, x1, x1], dtype=torch.float32)
-        corners_y = torch.tensor([y0, y1, y0, y1], dtype=torch.float32)
+        corners_x = torch.tensor([x0, x0, x1, x1], dtype=self.lattice.dtype, device=self.lattice.device)
+        corners_y = torch.tensor([y0, y1, y0, y1], dtype=self.lattice.dtype, device=self.lattice.device)
         f1, f2 = self.lattice.to_fractional(corners_x, corners_y)
 
         rings = []
@@ -84,31 +84,88 @@ class UnitCell(nn.Module):
         return best
 
     # --- rasterization ----------------------------------------------
-    def rasterize(self, nx: int, ny: int,
-                  dtype=torch.float32, device='cpu'):
-        """Periodic SDF sampled on one unit cell. Shape [ny, nx]."""
-        X, Y = cartesian_grid(self.lattice, nx, ny,
-                              dtype=dtype, device=device)
-        return self.sdf(X, Y)
+    def rasterize(self, nx: int, ny: int, *,
+                  repeat: tuple[int, int] = (1, 1),
+                  cartesian: bool = False):
+        """Periodic SDF sampled over a supercell.
 
-    def mask(self, nx, ny, *, dtype=torch.float32, device="cpu",
-             soft=False, softness=None):
-        """Rasterize the periodic structure into a mask. Shape [ny, nx].
+        repeat=(n1, n2) — tile n1 cells along a1 and n2 along a2.
 
-        soft=False -> hard binary mask (non-differentiable, for inference).
-        soft=True  -> differentiable sigmoid mask; `softness` is the edge
-                    scale in world units, defaulting to one pixel.
+        cartesian=False (default) — samples on the fractional parallelogram
+            grid; output shape [ny·n2, nx·n1]. Rows run along a2, so for
+            oblique lattices the image appears sheared when displayed with
+            imshow.
+
+        cartesian=True — samples on an axis-aligned Cartesian bounding box
+            of the supercell; output shape [ny·n2, nx·n1]. Rows are
+            horizontal in world space — correct for imshow display of any
+            lattice geometry, including hexagonal.
+            Query points are folded back into the unit cell via fractional
+            modulo before SDF evaluation, so the ring search stays valid
+            regardless of repeat size.
         """
-        d = self.rasterize(nx, ny, dtype=dtype, device=device)
+        n1, n2 = repeat
+
+        if not cartesian:
+            X, Y = cartesian_grid(self.lattice, nx, ny,
+                                  dtype=self.lattice.dtype, device=self.lattice.device)
+            d = self.sdf(X, Y)
+            return d if (n1 == 1 and n2 == 1) else d.tile(n2, n1)
+
+        # Cartesian bounding box of the n1×n2 supercell
+        fc = torch.tensor(
+            [[0.0, 0.0], [float(n1), 0.0], [0.0, float(n2)], [float(n1), float(n2)]],
+            dtype=self.lattice.dtype, device=self.lattice.device,
+        )
+        cx, cy = self.lattice.to_cartesian(fc[:, 0], fc[:, 1])
+        xmin, xmax = cx.min(), cx.max()
+        ymin, ymax = cy.min(), cy.max()
+
+        xs = torch.linspace(xmin.item(), xmax.item(), nx * n1,
+                            dtype=self.lattice.dtype, device=self.lattice.device)
+        ys = torch.linspace(ymin.item(), ymax.item(), ny * n2,
+                            dtype=self.lattice.dtype, device=self.lattice.device)
+        X, Y = torch.meshgrid(xs, ys, indexing="xy")
+
+        # Fold to unit cell: points stay in [0,1) fractional → ring search valid
+        f1, f2 = self.lattice.to_fractional(X, Y)
+        Xw, Yw = self.lattice.to_cartesian(f1 % 1.0, f2 % 1.0)
+        return self.sdf(Xw, Yw)
+
+    def mask(self, nx, ny, *, soft=False, softness=None,
+             repeat: tuple[int, int] = (1, 1),
+             cartesian: bool = False):
+        """Rasterize the periodic structure into a mask. Shape [ny·n2, nx·n1].
+
+        soft=False      -> hard binary mask (non-differentiable, for inference).
+        soft=True       -> differentiable sigmoid mask; `softness` is the edge
+                           scale in world units, defaulting to one pixel.
+        repeat=(n1, n2) -> tile n1 cells along a1 and n2 cells along a2.
+        cartesian=True  -> sample on an axis-aligned Cartesian grid so the
+                           result displays correctly with imshow for any
+                           lattice geometry (see rasterize for details).
+        """
+        d = self.rasterize(nx, ny, repeat=repeat, cartesian=cartesian)
 
         if not soft:
-            return (d <= 0).to(dtype)
+            return (d <= 0).to(d.dtype)
 
         if softness is None:
-            # one pixel in world units, from the lattice + resolution
-            dx = (self.lattice.a1.norm() / nx).item()
-            dy = (self.lattice.a2.norm() / ny).item()
-            softness = min(dx, dy)
+            if cartesian:
+                n1, n2 = repeat
+                fc = torch.tensor(
+                    [[0.0, 0.0], [float(n1), 0.0], [0.0, float(n2)], [float(n1), float(n2)]],
+                    dtype=self.lattice.dtype, device=self.lattice.device,
+                )
+                cx, cy = self.lattice.to_cartesian(fc[:, 0], fc[:, 1])
+                softness = min(
+                    ((cx.max() - cx.min()) / (nx * n1)).item(),
+                    ((cy.max() - cy.min()) / (ny * n2)).item(),
+                )
+            else:
+                dx = (self.lattice.a1.norm() / nx).item()
+                dy = (self.lattice.a2.norm() / ny).item()
+                softness = min(dx, dy)
 
         softness = torch.as_tensor(softness, dtype=d.dtype, device=d.device)
         return torch.sigmoid(-d / softness)

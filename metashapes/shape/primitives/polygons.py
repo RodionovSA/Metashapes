@@ -125,6 +125,11 @@ class RegularPolygon(Shape):
         ys = [cy + R * np.sin(a) for a in angles]
         return (float(min(xs)), float(min(ys))), (float(max(xs)), float(max(ys)))
 
+    def to_parametric(self) -> dict:
+        d = super().to_parametric()
+        d["n"] = self.n
+        return d
+
     @property
     def min_feature_size(self) -> float:
         pi = np.pi

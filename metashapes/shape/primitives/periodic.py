@@ -69,6 +69,11 @@ class Stripe(Shape):
             return (-inf, off - w / 2.0), (inf, off + w / 2.0)
         return (off - w / 2.0, -inf), (off + w / 2.0, inf)
 
+    def to_parametric(self) -> dict:
+        d = super().to_parametric()
+        d["axis"] = self.axis
+        return d
+
     @property
     def min_feature_size(self) -> float:
         return self.width.detach().item()
