@@ -6,6 +6,21 @@ from __future__ import annotations
 from typing import List, Dict
 import inspect
 
+from metashapes.lattice.basis import Lattice
+
+
+def lattice_inner_bounds(lattice: Lattice) -> tuple[float, float, float, float]:
+    """AABB of the unit-cell parallelogram (corners 0, a1, a2, a1+a2).
+
+    Returns (x_min, y_min, x_max, y_max). For a rectangular lattice
+    ``Lattice.rectangular(Lx, Ly)`` this gives ``(0, 0, Lx, Ly)``.
+    """
+    a1x, a1y = lattice.a1.tolist()
+    a2x, a2y = lattice.a2.tolist()
+    xs = [0.0, a1x, a2x, a1x + a2x]
+    ys = [0.0, a1y, a2y, a1y + a2y]
+    return min(xs), min(ys), max(xs), max(ys)
+
 def inspect_class_params(class_obj) -> List:
     params = list(inspect.signature(class_obj.__init__).parameters.keys())
     params.remove('self')

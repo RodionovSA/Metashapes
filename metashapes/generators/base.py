@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from dataclasses import asdict
 from datetime import datetime
@@ -11,8 +12,8 @@ import random
 from metashapes.generators.config import GeneratorConfig
 from metashapes.generators.report import GenerationBatchResult, GenerationReport
 from metashapes.generators.validator import UnitCellValidator
+from metashapes.lattice.basis import Lattice
 from metashapes.lattice.unit_cell import UnitCell
-from metashapes.lattice.canvas import Canvas
 
 
 class UnitCellGenerator(ABC):
@@ -22,32 +23,31 @@ class UnitCellGenerator(ABC):
     Generation pipeline for each candidate:
     1. sample shapes
     2. build candidate UnitCell
-    3. clip/intersect with the unit-cell rectangle defined by canvas
-    4. validate final cell
-    5. accept or reject
+    3. validate
+    4. accept or reject
     """
 
     def __init__(self, config: GeneratorConfig, validator: UnitCellValidator | None = None) -> None:
         self.config = config
         self.validator = validator
         self._rng = random.Random(config.seed)
-        
-    def generate(self, canvas: "Canvas") -> GenerationBatchResult:
+
+    def generate(self, lattice: Lattice) -> GenerationBatchResult:
         unit_cells: list[UnitCell] = []
 
         requested = self.config.target_count
         total_attempts = 0
         failure_reasons: dict[str, int] = {}
-    
+
         for _ in range(requested):
             success = False
 
             for _ in range(self.config.max_tries_per_cell):
                 total_attempts += 1
-                cell_canvas = self._sample_canvas(canvas)
+                cell_lattice = self._sample_lattice(lattice)
 
                 try:
-                    cell = self._generate_one(cell_canvas)
+                    cell = self._generate_one(cell_lattice)
                 except RuntimeError as e:
                     reason = str(e)
                     failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
@@ -62,7 +62,7 @@ class UnitCellGenerator(ABC):
 
                 failure_reasons[reason] = failure_reasons.get(reason, 0) + 1
 
-            # if not success: just mark implicitly as failed and move on
+            # if not success: implicitly counted as failed
 
         report = GenerationReport(
             requested=requested,
@@ -71,53 +71,69 @@ class UnitCellGenerator(ABC):
             total_attempts=total_attempts,
             failure_reasons=failure_reasons,
             parameter_ranges=self._parameter_ranges(unit_cells),
-            metadata=self._build_metadata(canvas),
+            metadata=self._build_metadata(lattice),
         )
 
         return GenerationBatchResult(unit_cells=unit_cells, report=report)
 
-    def _sample_canvas(self, canvas: "Canvas") -> "Canvas":
-        """
-        Return a (possibly resized) canvas for a single cell.
+    def _sample_lattice(self, lattice: Lattice) -> Lattice:
+        """Return a (possibly rescaled) lattice for a single cell.
 
-        Uses ``fixed_canvas_Lx`` / ``canvas_Lx_range`` and the Ly
-        equivalents from config.  If neither is set the original canvas
-        is returned unchanged.
+        Uniform scaling (``fixed_lattice_L`` / ``lattice_L_range``) scales
+        both vectors by the same factor, preserving the lattice angles and
+        relative vector lengths.  Use this for hexagonal or square lattices.
+
+        Per-axis scaling (``fixed_lattice_Lx/Ly`` / ``lattice_Lx/Ly_range``)
+        scales each vector's norm independently.  Intended for rectangular
+        lattices; using it on an oblique lattice distorts the angles.
+
+        Uniform fields take priority if both are set.
         """
         cfg = self.config
-        needs_resize = (
-            cfg.fixed_canvas_Lx is not None
-            or cfg.fixed_canvas_Ly is not None
-            or cfg.canvas_Lx_range is not None
-            or cfg.canvas_Ly_range is not None
-        )
+        needs_resize = any([
+            cfg.fixed_lattice_L, cfg.lattice_L_range,
+            cfg.fixed_lattice_Lx, cfg.fixed_lattice_Ly,
+            cfg.lattice_Lx_range, cfg.lattice_Ly_range,
+        ])
         if not needs_resize:
-            return canvas
+            return lattice
 
-        if cfg.fixed_canvas_Lx is not None:
-            Lx = cfg.fixed_canvas_Lx
-        elif cfg.canvas_Lx_range is not None:
-            lo, hi = cfg.canvas_Lx_range
+        # --- uniform scaling (angle-preserving) ---
+        if cfg.fixed_lattice_L is not None or cfg.lattice_L_range is not None:
+            L_orig = float(lattice.a1.norm())
+            if cfg.fixed_lattice_L is not None:
+                L = cfg.fixed_lattice_L
+            else:
+                lo, hi = cfg.lattice_L_range
+                L = lo + self._rng.random() * (hi - lo)
+            scale = L / L_orig
+            return Lattice(lattice.a1 * scale, lattice.a2 * scale)
+
+        # --- independent per-vector scaling (rectangular lattices) ---
+        Lx_orig = float(lattice.a1.norm())
+        Ly_orig = float(lattice.a2.norm())
+
+        if cfg.fixed_lattice_Lx is not None:
+            Lx = cfg.fixed_lattice_Lx
+        elif cfg.lattice_Lx_range is not None:
+            lo, hi = cfg.lattice_Lx_range
             Lx = lo + self._rng.random() * (hi - lo)
         else:
-            Lx = canvas.Lx
+            Lx = Lx_orig
 
-        if cfg.fixed_canvas_Ly is not None:
-            Ly = cfg.fixed_canvas_Ly
-        elif cfg.canvas_Ly_range is not None:
-            lo, hi = cfg.canvas_Ly_range
+        if cfg.fixed_lattice_Ly is not None:
+            Ly = cfg.fixed_lattice_Ly
+        elif cfg.lattice_Ly_range is not None:
+            lo, hi = cfg.lattice_Ly_range
             Ly = lo + self._rng.random() * (hi - lo)
         else:
-            Ly = canvas.Ly
+            Ly = Ly_orig
 
-        from dataclasses import replace
-        return replace(canvas, Lx=Lx, Ly=Ly)
+        return Lattice(lattice.a1 * (Lx / Lx_orig), lattice.a2 * (Ly / Ly_orig))
 
     @abstractmethod
-    def _generate_one(self, canvas: "Canvas") -> UnitCell:
-        """
-        Generate one raw periodic unit cell candidate before final validation.
-        """
+    def _generate_one(self, lattice: Lattice) -> UnitCell:
+        """Generate one raw periodic unit cell candidate before final validation."""
         raise NotImplementedError
 
     def _validate(self, cell: UnitCell) -> str | None:
@@ -125,26 +141,21 @@ class UnitCellGenerator(ABC):
             return None
         return self.validator.validate(cell)
 
-    def _build_metadata(self, canvas: Canvas) -> dict:
-        """
-        Build metadata dict attached to every GenerationReport.
-        Subclasses can call super() and extend the result.
-        """
+    def _build_metadata(self, lattice: Lattice) -> dict:
+        """Build metadata dict attached to every GenerationReport."""
         return {
             "generator": type(self).__name__,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
-            "canvas": canvas.to_parametric(),
+            "lattice": {"a1": lattice.a1.tolist(), "a2": lattice.a2.tolist()},
             "config": asdict(self.config),
         }
 
     def _parameter_ranges(self, unit_cells: list[UnitCell]) -> dict:
-        """
-        Summarise key parameter ranges across generated cells.
-        Subclasses can override to add shape-specific ranges.
-        """
+        """Summarise key parameter ranges across generated cells."""
         if not unit_cells:
             return {}
-        fills = [float(c.mask().mean().item()) for c in unit_cells]
-        return {
-            "fill_fraction": (min(fills), max(fills)),
-        }
+        fills = [
+            c.to_shapely().area / float(c.lattice.cell_area.item())
+            for c in unit_cells
+        ]
+        return {"fill_fraction": (min(fills), max(fills))}

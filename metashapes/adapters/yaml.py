@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from metashapes.lattice.unit_cell import UnitCell, UniformCell
+from metashapes.lattice.unit_cell import UnitCell
 
 
 class _Dumper(yaml.Dumper):
@@ -36,7 +36,7 @@ _VERSION = "1"
 
 def save_unit_cells(
     path: str | Path,
-    cells: UnitCell | UniformCell | list | tuple,
+    cells: UnitCell | list | tuple,
 ) -> None:
     """
     Save one or more unit cells to a YAML file.
@@ -44,9 +44,9 @@ def save_unit_cells(
     Parameters
     ----------
     path : str or Path
-    cells : UnitCell, UniformCell, or a list/tuple of them
+    cells : UnitCell or a list/tuple of them
     """
-    if isinstance(cells, (UnitCell, UniformCell)):
+    if isinstance(cells, UnitCell):
         cells = [cells]
     data = {
         "version": _VERSION,
@@ -55,14 +55,14 @@ def save_unit_cells(
     Path(path).write_text(yaml.dump(_to_safe(data), Dumper=_Dumper, default_flow_style=False, allow_unicode=True))
 
 
-def load_unit_cells(path: str | Path) -> list[UnitCell | UniformCell]:
+def load_unit_cells(path: str | Path) -> list[UnitCell]:
     """
     Load unit cells from a YAML file saved by :func:`save_unit_cells`
     or :func:`save_batch_result`.
 
     Returns
     -------
-    list of UnitCell / UniformCell
+    list of UnitCell 
     """
     raw = yaml.safe_load(Path(path).read_text())
     _check_version(raw)
@@ -142,13 +142,8 @@ def _to_safe(obj):
     return obj
 
 
-def _load_cell(data: dict) -> UnitCell | UniformCell:
-    t = data.get("type")
-    if t == "UnitCell":
-        return UnitCell.from_parametric(data)
-    if t == "UniformCell":
-        return UniformCell.from_parametric(data)
-    raise ValueError(f"Unknown cell type in YAML: {t!r}")
+def _load_cell(data: dict) -> UnitCell:
+    return UnitCell.from_parametric(data)
 
 
 def _check_version(raw: dict) -> None:

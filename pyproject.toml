@@ -33,7 +33,6 @@ dependencies = [
 
 [project.optional-dependencies]
 gds = ["gdstk"]
-klayout = ["klayout"]
 dev = ["pytest", "matplotlib", "jupyter"]
 
 [project.urls]

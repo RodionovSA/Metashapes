@@ -1,75 +1,88 @@
 # MetaShapes
 
-**MetaShapes** is a Python library for working with 2D shapes in the context of metasurface design. It provides SDF-based (signed distance function) shape primitives, boolean composition, unit cell management, constraint-based random generation, and export to Shapely, NumPy, and GDS formats.
+**MetaShapes** is a Python library for working with 2D periodic geometries in the context of metasurface design.
+It is built on a **Shape + Lattice = UnitCell** model: shapes are defined analytically via Signed Distance Functions (SDFs), making them differentiable and composable via boolean operations. A `UnitCell` pairs a `Lattice` (periodicity) with any `Shape` tree to produce a periodic structure.
 
-The library is designed to support both simulation workflows and fabrication-ready layout generation.
+The library supports simulation workflows, inverse design, geometry analysis, and fabrication-ready layout generation.
 
 ## Features
 
-- **SDF primitives** — analytically defined 2D shapes with exact signed distance functions, differentiable via PyTorch:
-  - Quadrilaterals: `Rectangle`, `ConvexQuad`, `IsoscelesTrapezoid`
-  - Conics: `Ellipse`
-  - Polygons: `RegularPolygon`
-  - Junctions: `Cross`, `TShape`
-  - Periodic: `Stripe`
-- **Boolean operations** — `Union`, `Intersection`, `Difference` for composing complex shapes
-- **Transforms** — `Translate`, `Rotate`, `Scale`
-- **Unit cell** — `UnitCell` and `UniformCell` for managing periodic metasurface cells with multiple shapes
-- **Analysis** — `UnitCellAnalyzer` for computing geometry metrics (fill factor, gap distances, feature sizes)
-- **Random generator** — constraint-based random generation of unit cells with configurable shape counts, parameter ranges, minimum gap/feature size, and sampling weights
-- **Adapters** — export to Shapely geometries, NumPy raster arrays, and YAML serialization/deserialization
-- **Canvas** — raster grid definition for pixel-level rendering
+- **SDF-based primitives** backed by `nn.Module` — differentiable by default, ready for PyTorch-based inverse design
+- **Boolean operations** (`|` Union, `&` Intersection, `-` Difference) and transforms (Translate, Rotate, Scale)
+- **Rectangular and hexagonal lattices** via `Lattice.rectangular` / `Lattice.hexagonal`
+- **Random dataset generator** with geometric constraints (min gap, min feature size, fill fraction)
+- **Analysis**: fill fraction, min gap, min feature size via `UnitCellAnalyzer`
+- **Serialization**: YAML save/load; Shapely export; GDS export (via `transform.shapely_to_gdstk`, full adapter coming soon)
 
 ## Installation
 
 ```bash
-pip install metashapes
-```
-
-For GDS export support:
-
-```bash
-pip install metashapes[gds]
+pip install git+https://github.com/RodionovSA/Metashapes
 ```
 
 ## Quick Start
 
 ```python
-from metashapes import Canvas, Shape, UnitCell
-from metashapes.shape.primitives import Rectangle, Ellipse, Cross
+from metashapes import UnitCell, Lattice
+from metashapes.shape import Rectangle
 
-# Define a unit cell canvas (size in nm)
-canvas = Canvas(x0=-150, y0=-150, Lx=300, Ly=300, H=300, W=300)
-
-# Create shapes
+lattice = Lattice.rectangular(400, 400)
 rect = Rectangle(center=(0, 0), size=(100, 60), angle=0.0)
-ell  = Ellipse(center=(0, 0), axes=(120, 80))
+cell = UnitCell(lattice=lattice, scene=rect)
 
-# Render to NumPy array
-arr = rect.to_numpy(canvas)
+mask = cell.mask(nx=128, ny=128)  # binary mask as torch.Tensor
+sdf  = cell.rasterize(nx=128, ny=128)  # signed-distance grid
+```
 
-# Build a unit cell
-cell = UnitCell(canvas=canvas, shape=rect)
+Available primitives: `Rectangle`, `ConvexQuad`, `IsoscelesTrapezoid`, `Ellipse`, `RegularPolygon`, `Cross`, `TShape`, `Stripe`.
+
+## Boolean Operations
+
+Shapes compose with Python operators:
+
+```python
+from metashapes.shape import Ellipse, Rectangle
+
+big  = Ellipse(center=(0, 0), axes=(150, 100))
+hole = Rectangle(center=(0, 0), size=(60, 40))
+ring = big - hole        # Difference
+# also: big | hole  (Union),  big & hole  (Intersection)
+
+cell = UnitCell(lattice=lattice, scene=ring)
 ```
 
 ## Random Generation
 
 ```python
-from metashapes.generators import RandomUnitCellGenerator
-from metashapes.generators.config import GeneratorConfig
+from metashapes import Lattice
+from metashapes.generators import RandomUnitCellGenerator, RandomGeneratorConfig
 
-config = GeneratorConfig(
+config = RandomGeneratorConfig(
     target_count=100,
     allowed_shapes=("Rectangle", "Ellipse", "Cross"),
     min_num_shapes=1,
     max_num_shapes=2,
     min_gap=10.0,
     min_feature_size=30.0,
+    lattice_L_range=(300.0, 500.0),
     seed=42,
 )
 
-generator = RandomUnitCellGenerator(config)
-batch = generator.generate(canvas)
+gen   = RandomUnitCellGenerator(config)
+batch = gen.generate(Lattice.rectangular(400, 400))
+cells = batch.unit_cells  # list[UnitCell]
+```
+
+## Analysis
+
+```python
+from metashapes import UnitCellAnalyzer
+
+analyzer = UnitCellAnalyzer(min_gap=10.0, min_feature_size=20.0)
+metrics  = analyzer.metrics(cell)
+print(metrics.fill_fraction, metrics.min_gap, metrics.min_feature_size)
+
+failures = analyzer.check(cell)   # list of violated constraint strings
 ```
 
 ## YAML Serialization
@@ -77,7 +90,7 @@ batch = generator.generate(canvas)
 ```python
 from metashapes.adapters.yaml import save_unit_cells, load_unit_cells
 
-save_unit_cells("cells.yaml", batch.cells)
+save_unit_cells("cells.yaml", batch.unit_cells)
 cells = load_unit_cells("cells.yaml")
 ```
 
@@ -89,7 +102,6 @@ cells = load_unit_cells("cells.yaml")
 - Shapely >= 2.0
 - PyYAML >= 6.0
 - gdstk *(optional, for GDS export)*
-- KLayout Python API *(optional)*
 
 ## License
 

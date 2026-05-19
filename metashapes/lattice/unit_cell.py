@@ -113,17 +113,11 @@ class UnitCell(nn.Module):
             return d if (n1 == 1 and n2 == 1) else d.tile(n2, n1)
 
         # Cartesian bounding box of the n1×n2 supercell
-        fc = torch.tensor(
-            [[0.0, 0.0], [float(n1), 0.0], [0.0, float(n2)], [float(n1), float(n2)]],
-            dtype=self.lattice.dtype, device=self.lattice.device,
-        )
-        cx, cy = self.lattice.to_cartesian(fc[:, 0], fc[:, 1])
-        xmin, xmax = cx.min(), cx.max()
-        ymin, ymax = cy.min(), cy.max()
+        xmin, xmax, ymin, ymax = self.extent(repeat=repeat)
 
-        xs = torch.linspace(xmin.item(), xmax.item(), nx * n1,
+        xs = torch.linspace(xmin, xmax, nx * n1,
                             dtype=self.lattice.dtype, device=self.lattice.device)
-        ys = torch.linspace(ymin.item(), ymax.item(), ny * n2,
+        ys = torch.linspace(ymin, ymax, ny * n2,
                             dtype=self.lattice.dtype, device=self.lattice.device)
         X, Y = torch.meshgrid(xs, ys, indexing="xy")
 
@@ -153,14 +147,10 @@ class UnitCell(nn.Module):
         if softness is None:
             if cartesian:
                 n1, n2 = repeat
-                fc = torch.tensor(
-                    [[0.0, 0.0], [float(n1), 0.0], [0.0, float(n2)], [float(n1), float(n2)]],
-                    dtype=self.lattice.dtype, device=self.lattice.device,
-                )
-                cx, cy = self.lattice.to_cartesian(fc[:, 0], fc[:, 1])
+                xmin, xmax, ymin, ymax = self.extent(repeat=repeat)
                 softness = min(
-                    ((cx.max() - cx.min()) / (nx * n1)).item(),
-                    ((cy.max() - cy.min()) / (ny * n2)).item(),
+                    (xmax - xmin) / (nx * n1),
+                    (ymax - ymin) / (ny * n2),
                 )
             else:
                 dx = (self.lattice.a1.norm() / nx).item()
@@ -200,7 +190,7 @@ class UnitCell(nn.Module):
 
         # --- sample the periodic SDF on one cell -------------------------
         # fractional grid, endpoint-excluded so the seam is not duplicated
-        f = torch.arange(n, dtype=torch.float32) / n
+        f = torch.arange(n, dtype=self.lattice.dtype, device = self.lattice.device) / n
         F1, F2 = torch.meshgrid(f, f, indexing="xy")          # [n, n]
         X, Y = self.lattice.to_cartesian(F1, F2)
         with torch.no_grad():
@@ -264,6 +254,55 @@ class UnitCell(nn.Module):
         if not pts:
             return np.empty((0, 2), dtype=np.float64)
         return np.asarray(pts, dtype=np.float64)
+
+    # --- extent ------------------------------------------------------
+    def extent(self, *, repeat: tuple[int, int] = (1, 1)) -> tuple[float, float, float, float]:
+        """Axis-aligned Cartesian bounding box of the supercell.
+
+        Returns ``(xmin, xmax, ymin, ymax)`` — the format expected by
+        matplotlib's ``imshow(extent=...)``.
+
+        Works correctly for any lattice geometry (rectangular, hexagonal,
+        oblique). For a 1×1 cell the four parallelogram corners are mapped
+        to Cartesian space; for a repeat supercell the full corner set is used.
+
+        Parameters
+        ----------
+        repeat : tuple[int, int]
+            Supercell tiling ``(n1, n2)`` along ``a1`` and ``a2``.
+            Defaults to ``(1, 1)`` for a single unit cell.
+
+        Example
+        -------
+        ::
+
+            cell = UnitCell(Lattice.hexagonal(1.0), scene)
+            mask = cell.mask(128, 128, cartesian=True).numpy()
+            xmin, xmax, ymin, ymax = cell.extent()
+            plt.imshow(mask, extent=[xmin, xmax, ymin, ymax], origin='lower')
+        """
+        n1, n2 = repeat
+        fc = torch.tensor(
+            [[0.0, 0.0], [float(n1), 0.0], [0.0, float(n2)], [float(n1), float(n2)]],
+            dtype=self.lattice.dtype, device=self.lattice.device,
+        )
+        cx, cy = self.lattice.to_cartesian(fc[:, 0], fc[:, 1])
+        return cx.min().item(), cx.max().item(), cy.min().item(), cy.max().item()
+
+    # --- shapely adapter ---------------------------------------------
+    def to_shapely(self):
+        from shapely.geometry import Polygon
+        from metashapes.adapters.shapely import shape_to_shapely
+
+        a1 = self.lattice.a1.detach().cpu().tolist()
+        a2 = self.lattice.a2.detach().cpu().tolist()
+        cell_poly = Polygon([
+            (0.0, 0.0),
+            (a1[0], a1[1]),
+            (a1[0] + a2[0], a1[1] + a2[1]),
+            (a2[0], a2[1]),
+        ])
+        return shape_to_shapely(self.scene).intersection(cell_poly)
 
     # --- serialization -----------------------------------------------
     def to_parametric(self) -> dict:

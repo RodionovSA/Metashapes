@@ -3,24 +3,28 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 import random
-import numpy as np
+
 from shapely.affinity import translate
 
 from metashapes.generators.base import UnitCellGenerator
 from metashapes.generators.config import GeneratorConfig
 from metashapes.generators.validator import UnitCellValidator
 from metashapes.generators.registry import SHAPE_SAMPLER_REGISTRY
-import metashapes.generators.samplers  
+import metashapes.generators.samplers
 
-
+from metashapes.lattice.basis import Lattice
 from metashapes.lattice.unit_cell import UnitCell
-from metashapes.lattice.canvas import Canvas
-from metashapes.shape.primitives import Rectangle
-from metashapes import Shape
-from metashapes.adapters.shapely import remove_holes
-from metashapes.utils import periodic_shift_skipped
+from metashapes.shape.base import Shape
+from metashapes.adapters.shapely import shape_to_shapely, remove_holes
+
+
+def _has_infinite_bounds(shape: Shape) -> bool:
+    """Return True if the shape has infinite spatial extent (e.g. Stripe)."""
+    (x0, y0), (x1, y1) = shape.bounds()
+    return not all(math.isfinite(v) for v in (x0, y0, x1, y1))
 
 
 @dataclass(slots=True)
@@ -50,79 +54,73 @@ class RandomUnitCellGenerator(UnitCellGenerator):
     config: RandomGeneratorConfig
 
     def __init__(self, config: RandomGeneratorConfig, validator: UnitCellValidator | None = None) -> None:
-            super().__init__(config, validator=validator)
-            self.config = config
+        super().__init__(config, validator=validator)
+        self.config = config
 
-    def _generate_one(self, canvas: "Canvas") -> UnitCell:
+    def _generate_one(self, lattice: Lattice) -> UnitCell:
         n_shapes = self._sample_num_shapes()
 
         accepted_shapes = []
 
         for _ in range(n_shapes):
-            shape = self._sample_shape_with_constraints(accepted_shapes, canvas)
+            shape = self._sample_shape_with_constraints(accepted_shapes, lattice)
             accepted_shapes.append(shape)
 
         combined_shape = self._combine_shapes(accepted_shapes)
+        return UnitCell(lattice, combined_shape)
 
-        # Aggregate periodic shifts from all accepted shapes so the UnitCell
-        # knows which directions should not be clipped at the boundary.
-        periodic_shifts: set[tuple[int, int]] = set()
-        for s in accepted_shapes:
-            periodic_shifts |= s.allowed_self_periodic_shifts
-
-        cell = UnitCell(combined_shape, canvas, periodic_shifts=periodic_shifts)
-        return cell
-    
-    def _sample_shape_with_constraints(self, accepted_shapes: list, canvas: "Canvas"):
+    def _sample_shape_with_constraints(self, accepted_shapes: list, lattice: Lattice):
         for _ in range(self.config.max_tries_per_shape):
             shape_name = self._sample_shape_name()
-            candidate = self._sample_shape(shape_name, canvas)
+            try:
+                candidate = self._sample_shape(shape_name, lattice)
+            except ValueError as e:
+                # Infeasible constraint (e.g. min_shape_size > cell size) — treat as
+                # a placement failure so the outer retry loop handles it gracefully.
+                raise RuntimeError(str(e)) from e
 
-            if self._is_shape_valid(candidate, accepted_shapes, canvas):
+            if self._is_shape_valid(candidate, accepted_shapes, lattice):
                 return candidate
-            
+
         raise RuntimeError("shape_placement_failed")
-            
-    def _is_shape_valid(self, candidate, accepted_shapes: list, canvas: "Canvas") -> bool:
-        candidate_geom = remove_holes(candidate.to_shapely())
-        
-        # Check that shape is larger than min_shape_size 
+
+    def _is_shape_valid(self, candidate: Shape, accepted_shapes: list, lattice: Lattice) -> bool:
+        candidate_geom = remove_holes(shape_to_shapely(candidate))
+
+        # Check that shape is larger than min_shape_size
         min_shape_size = self.config.min_shape_size
         if min_shape_size is not None:
             minx, miny, maxx, maxy = candidate_geom.bounds
-            sx = maxx - minx
-            sy = maxy - miny
-            if sx < min_shape_size or sy < min_shape_size:
+            if (maxx - minx) < min_shape_size or (maxy - miny) < min_shape_size:
                 return False
-            
+
         # Check that shape does not have features smaller than min_feature_size
         min_feature_size = self.config.min_feature_size
         if min_feature_size is not None:
             fs = candidate.min_feature_size
             if fs is not None and fs < min_feature_size:
                 return False
-        
+
         # Check minimum gap to already accepted shapes
         min_gap = self.config.min_gap or 0.0
         shifts = [(-1, -1), (-1, 0), (-1, 1),
-                ( 0, -1),          ( 0, 1),
-                ( 1, -1), ( 1, 0), ( 1, 1)]
+                  ( 0, -1),          ( 0, 1),
+                  ( 1, -1), ( 1, 0), ( 1, 1)]
 
-        # candidate vs its own periodic images
-        allowed = candidate.allowed_self_periodic_shifts
-        for ix, iy in shifts:
-            if periodic_shift_skipped(ix, iy, allowed):
-                continue
-
-            shifted = translate(candidate_geom, xoff=ix * canvas.Lx, yoff=iy * canvas.Ly)
-            if candidate_geom.distance(shifted) <= min_gap:
-                return False
+        # candidate vs its own periodic images (skip for infinite shapes)
+        if not _has_infinite_bounds(candidate):
+            for ix, iy in shifts:
+                ox, oy = lattice.offset(ix, iy).tolist()
+                shifted = translate(candidate_geom, xoff=ox, yoff=oy)
+                if candidate_geom.distance(shifted) <= min_gap:
+                    return False
 
         # candidate vs already accepted shapes and their periodic images
         for shape in accepted_shapes:
-            geom = remove_holes(shape.to_shapely())
+            geom = remove_holes(shape_to_shapely(shape))
             for ix, iy in shifts + [(0, 0)]:
-                shifted = translate(geom, xoff=ix * canvas.Lx, yoff=iy * canvas.Ly)
+                ox, oy = lattice.offset(ix, iy).tolist()
+                shifted = translate(geom, xoff=ox, yoff=oy)
                 if candidate_geom.distance(shifted) <= min_gap:
                     return False
 
@@ -153,7 +151,7 @@ class RandomUnitCellGenerator(UnitCellGenerator):
 
         return self._rng.choices(names, weights=weights, k=1)[0]
 
-    def _sample_shape(self, shape_name: str, canvas: Canvas):
+    def _sample_shape(self, shape_name: str, lattice: Lattice) -> Shape:
         try:
             sampler = SHAPE_SAMPLER_REGISTRY[shape_name]
         except KeyError as e:
@@ -161,9 +159,9 @@ class RandomUnitCellGenerator(UnitCellGenerator):
                 f"No sampler registered for shape '{shape_name}'"
             ) from e
 
-        return sampler.sample(self._rng, canvas, self.config)
-            
-    def _combine_shapes(self, shapes: list):
+        return sampler.sample(self._rng, lattice, self.config)
+
+    def _combine_shapes(self, shapes: list) -> Shape:
         if not shapes:
             raise RuntimeError("No shapes to combine")
 

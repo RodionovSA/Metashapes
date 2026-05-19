@@ -20,8 +20,7 @@ class UnitCellValidator(ABC):
 
 class DefaultUnitCellValidator(UnitCellValidator):
     def validate(self, cell: UnitCell) -> str | None:
-        shape = cell.filled_region
-        geom = shape.to_shapely()
+        geom = cell.to_shapely()
 
         if geom.is_empty:
             return "empty"

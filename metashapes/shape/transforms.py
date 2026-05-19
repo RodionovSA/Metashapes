@@ -56,12 +56,19 @@ class Rotate(Shape):
     """
     Symbolic rotation of a shape.
     """
-    def __init__(self, 
-                 shape: Shape, 
+    def __init__(self,
+                 shape: Shape,
                  angle: float | torch.Tensor,
                  origin: Tuple[float | torch.Tensor,
                                float | torch.Tensor]  = (0.0, 0.0)):
         super().__init__()
+        (x0, y0), (x1, y1) = shape.bounds()
+        if not all(math.isfinite(v) for v in (x0, y0, x1, y1)):
+            raise NotImplementedError(
+                "Cannot rotate a shape with infinite spatial extent "
+                "(e.g. a Stripe or any boolean composition containing one). "
+                "Define infinite shapes in their final orientation before composing."
+            )
         self.shape = shape
         register(self, "angle", angle)
         register(self, "origin", origin)

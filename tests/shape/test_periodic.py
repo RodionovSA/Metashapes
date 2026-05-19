@@ -3,6 +3,8 @@
 import pytest
 import torch
 from metashapes.shape.primitives.periodic import Stripe
+from metashapes.shape.primitives.quads import Rectangle
+from metashapes.shape.transforms import Rotate
 from metashapes.shape import Shape
 from .conftest import assert_inside, assert_outside, assert_round_trip, sdf_at
 
@@ -85,6 +87,20 @@ class TestStripe:
         s = Stripe(offset=0.0, width=0.3, axis='x')
         with pytest.raises(NotImplementedError):
             s.rotate(45.0)
+
+    def test_union_with_stripe_rotate_raises(self):
+        stripe = Stripe(offset=0.0, width=0.2, axis='x')
+        rect = Rectangle(center=(0, 0), size=(0.4, 0.4), angle=0.0)
+        union = stripe | rect
+        with pytest.raises(NotImplementedError, match="infinite"):
+            union.rotate(45.0)
+
+    def test_rotate_composition_via_rotate_class_raises(self):
+        stripe = Stripe(offset=0.1, width=0.2, axis='x')
+        rect = Rectangle(center=(0, 0), size=(0.3, 0.3), angle=0.0)
+        shape = stripe | rect
+        with pytest.raises(NotImplementedError, match="infinite"):
+            Rotate(shape, angle=30.0)
 
     # --- serialization ----------------------------------------------------
 

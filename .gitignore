@@ -1,2 +1,5 @@
 *__pycache__
-.pyetest_cache
+.pytest_cache
+CLAUDE.md
+.gitignore
+.claude

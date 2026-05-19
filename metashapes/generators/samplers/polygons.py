@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import math
 
-from metashapes.lattice.canvas import Canvas
+from metashapes.lattice.basis import Lattice
 from metashapes.generators.registry import register_shape_sampler
 from metashapes.generators.samplers.base import ShapeSampler
 from metashapes.generators.samplers.utils import (
     get_all_fixed_param,
     get_all_param_range,
     intersect_ranges,
+    lattice_inner_bounds,
     resolve_param,
     sample_center_in_bounds,
 )
@@ -22,14 +23,14 @@ from metashapes.shape.primitives import RegularPolygon
 class RegularPolygonSampler(ShapeSampler):
     shape_class = RegularPolygon
 
-    def sample(self, rng, canvas: Canvas, config) -> RegularPolygon:
+    def sample(self, rng, lattice: Lattice, config) -> RegularPolygon:
         min_size = config.min_shape_size or 0.1
         min_feature = config.min_feature_size or 0.0
 
         fixed = get_all_fixed_param(config, self.shape_class)
         ranges = get_all_param_range(config, self.shape_class)
 
-        x0, y0, x1, y1 = canvas.inner_bounds
+        x0, y0, x1, y1 = lattice_inner_bounds(lattice)
         iw, ih = x1 - x0, y1 - y0
         max_r = min(iw, ih) / 2.0
 

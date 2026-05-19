@@ -281,3 +281,98 @@ class TestUnitCellGradients:
             boundary_region.sum().backward()
             assert side_length.grad is not None
             assert side_length.grad.abs().item() > 0.0
+
+
+# ---------------------------------------------------------------------------
+# to_shapely tests
+# ---------------------------------------------------------------------------
+
+class TestToShapely:
+    def test_rectangle_clips_to_cell(self):
+        from metashapes.shape.primitives.quads import Rectangle
+        lattice = Lattice.rectangular(2.0, 2.0)
+        shape = Rectangle(center=torch.zeros(2), size=torch.tensor([0.8, 0.8]))
+        cell = UnitCell(lattice, shape)
+        geom = cell.to_shapely()
+        assert not geom.is_empty
+        assert geom.area > 0.0
+        # result must lie within the unit cell parallelogram
+        from shapely.geometry import Polygon
+        a1 = lattice.a1.tolist()
+        a2 = lattice.a2.tolist()
+        cell_poly = Polygon([(0, 0), (a1[0], a1[1]),
+                             (a1[0]+a2[0], a1[1]+a2[1]), (a2[0], a2[1])])
+        assert geom.difference(cell_poly).is_empty
+
+    def test_stripe_clips_to_cell(self):
+        lattice = Lattice.rectangular(2.0, 3.0)
+        # offset=1.5 centers the stripe in the [0,3] cell; y ∈ [1.0, 2.0] fully inside
+        shape = Stripe(offset=torch.tensor(1.5), width=torch.tensor(1.0), axis="x")
+        cell = UnitCell(lattice, shape)
+        geom = cell.to_shapely()
+        assert not geom.is_empty
+        assert geom.area > 0.0
+        # stripe width=1.0, cell Lx=2.0 → intersection area = 2.0 * 1.0
+        assert abs(geom.area - 2.0 * 1.0) < 0.01
+
+    def test_shape_outside_cell_is_empty(self):
+        from metashapes.shape.primitives.quads import Rectangle
+        lattice = Lattice.rectangular(2.0, 2.0)
+        # Rectangle centered far outside the unit cell
+        shape = Rectangle(center=torch.tensor([100.0, 100.0]),
+                          size=torch.tensor([0.5, 0.5]))
+        cell = UnitCell(lattice, shape)
+        geom = cell.to_shapely()
+        assert geom.is_empty
+
+
+# ---------------------------------------------------------------------------
+# extent() tests
+# ---------------------------------------------------------------------------
+
+class TestExtent:
+    def test_rectangular_unit_cell(self):
+        cell = UnitCell(Lattice.rectangular(2.0, 3.0), _square_cell().scene)
+        xmin, xmax, ymin, ymax = cell.extent()
+        assert xmin == pytest.approx(0.0)
+        assert xmax == pytest.approx(2.0)
+        assert ymin == pytest.approx(0.0)
+        assert ymax == pytest.approx(3.0)
+
+    def test_rectangular_repeat(self):
+        cell = UnitCell(Lattice.rectangular(2.0, 3.0), _square_cell().scene)
+        xmin, xmax, ymin, ymax = cell.extent(repeat=(2, 3))
+        assert xmin == pytest.approx(0.0)
+        assert xmax == pytest.approx(4.0)
+        assert ymin == pytest.approx(0.0)
+        assert ymax == pytest.approx(9.0)
+
+    def test_hexagonal_pointy_width(self):
+        # Pointy hex: a1=(a,0), a2=(a/2, a√3/2) → corners at (0,0),(a,0),(a/2,…),(3a/2,…)
+        # AABB width = xmax - xmin = 3a/2
+        a = 2.0
+        cell = UnitCell(Lattice.hexagonal(a, orientation="pointy"), _square_cell().scene)
+        xmin, xmax, ymin, ymax = cell.extent()
+        assert xmax - xmin == pytest.approx(1.5 * a, abs=1e-5)
+        assert ymax > ymin
+
+    def test_hexagonal_repeat_n1_grows_width(self):
+        # For repeat=(n1, 1), x-extent grows as n1*a + a/2 (last corner at n1*a1 + a2)
+        a = 1.0
+        cell = UnitCell(Lattice.hexagonal(a, orientation="pointy"), _square_cell().scene)
+        xmin1, xmax1, _, _ = cell.extent(repeat=(1, 1))
+        xmin3, xmax3, _, _ = cell.extent(repeat=(3, 1))
+        # repeat=(3,1): corners at (0,0),(3a,0),(a/2,…),(7a/2,…) → width = 7a/2
+        assert xmax3 - xmin3 == pytest.approx(3.5 * a, abs=1e-5)
+        assert xmax3 - xmin3 > xmax1 - xmin1
+
+    def test_returns_plain_floats(self):
+        cell = _square_cell()
+        result = cell.extent()
+        assert len(result) == 4
+        for v in result:
+            assert isinstance(v, float)
+
+    def test_default_repeat_is_1_1(self):
+        cell = _square_cell()
+        assert cell.extent() == cell.extent(repeat=(1, 1))

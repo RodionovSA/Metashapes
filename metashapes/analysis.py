@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Iterator
@@ -12,13 +13,15 @@ import numpy as np
 from shapely.affinity import translate
 from shapely.geometry.base import BaseGeometry
 
+from metashapes.lattice.basis import Lattice
 from metashapes.lattice.unit_cell import UnitCell
 from metashapes.shape.base import Shape
 from metashapes.shape.boolean import Union, Intersection, Difference
 from metashapes.shape.transforms import Translate, Rotate, Scale
-from metashapes.utils import periodic_shift_skipped
 
 __all__ = ["CellMetrics", "UnitCellAnalyzer"]
+
+_FILL_RESOLUTION = 64  # grid size for fill-fraction rasterization
 
 
 # ---------------------------------------------------------------------------
@@ -142,10 +145,12 @@ class UnitCellAnalyzer:
 
     def metrics(self, cell: UnitCell) -> CellMetrics:
         """Compute all metrics for a single cell."""
-        leaves = list(_leaf_shapes(cell.shape))
+        leaves = list(_leaf_shapes(cell.scene))
         geoms = [_to_geom(s) for s in leaves]
 
-        fill_fraction = float(cell.mask().mean().item())
+        fill_fraction = float(
+            cell.mask(_FILL_RESOLUTION, _FILL_RESOLUTION).mean().item()
+        )
 
         shape_areas = [float(g.area) for g in geoms]
         shape_bbox_sizes = [_bbox_size(g) for g in geoms]
@@ -154,7 +159,7 @@ class UnitCellAnalyzer:
         finite_fs = [f for f in feature_sizes if f is not None]
         min_fs = min(finite_fs) if finite_fs else None
 
-        min_gap = _compute_min_gap(leaves, geoms, cell.canvas.Lx, cell.canvas.Ly)
+        min_gap = _compute_min_gap(leaves, geoms, cell.lattice)
 
         return CellMetrics(
             fill_fraction=fill_fraction,
@@ -264,9 +269,10 @@ class UnitCellAnalyzer:
         # --- compute fingerprints ---
         fps = np.empty((n, resolution * resolution), dtype=np.float32)
         for idx, cell in enumerate(cells):
-            canvas_lr = cell.canvas.with_grid(H=resolution, W=resolution)
-            x, y = canvas_lr.grid()
-            fps[idx] = cell.sdf(x, y).detach().cpu().numpy().ravel()
+            fps[idx] = (
+                cell.rasterize(resolution, resolution)
+                .detach().cpu().numpy().ravel()
+            )
 
         # --- union-find ---
         parent = list(range(n))
@@ -305,8 +311,8 @@ class UnitCellAnalyzer:
 # ---------------------------------------------------------------------------
 
 def _to_geom(shape: Shape) -> BaseGeometry:
-    from metashapes.adapters.shapely import remove_holes
-    return remove_holes(shape.to_shapely())
+    from metashapes.adapters.shapely import shape_to_shapely, remove_holes
+    return remove_holes(shape_to_shapely(shape))
 
 
 def _bbox_size(geom: BaseGeometry) -> tuple[float, float]:
@@ -314,24 +320,42 @@ def _bbox_size(geom: BaseGeometry) -> tuple[float, float]:
     return (maxx - minx, maxy - miny)
 
 
+def _skip_self_shift(shape: Shape, ox: float, oy: float) -> bool:
+    """True if this periodic shift should be skipped for self-gap measurement.
+
+    A shape with infinite extent along an axis reaches the cell boundary in
+    that direction, so shifts with a component along that axis are skipped —
+    the periodic copies overlap and the zero-distance is not a real gap.
+    """
+    (x0, y0), (x1, y1) = shape.bounds()
+    eps = 1e-10
+    inf_x = not math.isfinite(x0) or not math.isfinite(x1)
+    inf_y = not math.isfinite(y0) or not math.isfinite(y1)
+    if inf_x and abs(ox) > eps:
+        return True
+    if inf_y and abs(oy) > eps:
+        return True
+    return False
+
+
 def _compute_min_gap(
     shapes: list[Shape],
     geoms: list[BaseGeometry],
-    Lx: float,
-    Ly: float,
+    lattice: Lattice,
 ) -> float | None:
     """
     Minimum distance between any two shapes (or a shape and its own periodic
     images), considering the 8 nearest periodic copies.
 
-    Shifts that are covered by a shape's ``allowed_self_periodic_shifts`` —
-    including diagonal contacts implied by axis-periodicity — are excluded,
-    so a Stripe's gap is measured only in the perpendicular direction.
+    Shifts where a shape with infinite extent along a lattice direction would
+    trivially overlap its own copy are excluded, so a Stripe's gap is measured
+    only in the perpendicular direction.
     """
     if not geoms:
         return None
 
-    shifts = [
+    # (i, j) lattice index pairs for the 8 nearest periodic images
+    neighbor_indices = [
         (-1, -1), (-1, 0), (-1, 1),
         ( 0, -1),           (0,  1),
         ( 1, -1), ( 1, 0), ( 1, 1),
@@ -340,19 +364,21 @@ def _compute_min_gap(
     min_d = float("inf")
 
     for i, (si, gi) in enumerate(zip(shapes, geoms)):
-        allowed_i = si.allowed_self_periodic_shifts
-
-        # shape vs its own periodic images (skip allowed/implied shifts)
-        for ix, iy in shifts:
-            if periodic_shift_skipped(ix, iy, allowed_i):
+        # shape vs its own periodic images
+        for ix, iy in neighbor_indices:
+            off = lattice.offset(ix, iy)
+            ox, oy = off[0].item(), off[1].item()
+            if _skip_self_shift(si, ox, oy):
                 continue
-            shifted = translate(gi, xoff=ix * Lx, yoff=iy * Ly)
+            shifted = translate(gi, xoff=ox, yoff=oy)
             min_d = min(min_d, gi.distance(shifted))
 
         # shape vs every other shape and their periodic images
-        for sj, gj in zip(shapes[i + 1:], geoms[i + 1:]):
-            for ix, iy in shifts + [(0, 0)]:
-                shifted = translate(gj, xoff=ix * Lx, yoff=iy * Ly)
+        for gj in geoms[i + 1:]:
+            for ix, iy in neighbor_indices + [(0, 0)]:
+                off = lattice.offset(ix, iy)
+                ox, oy = off[0].item(), off[1].item()
+                shifted = translate(gj, xoff=ox, yoff=oy)
                 min_d = min(min_d, gi.distance(shifted))
 
     return min_d if min_d < float("inf") else None

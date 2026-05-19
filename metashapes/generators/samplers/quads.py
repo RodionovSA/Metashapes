@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from metashapes.lattice.canvas import Canvas
+from metashapes.lattice.basis import Lattice
 from metashapes.generators.samplers.base import ShapeSampler
 from metashapes.generators.registry import register_shape_sampler
 from metashapes.shape.primitives import Rectangle, ConvexQuad, IsoscelesTrapezoid
@@ -13,6 +13,7 @@ from metashapes.generators.samplers.utils import (
     get_all_fixed_param,
     get_all_param_range,
     intersect_ranges,
+    lattice_inner_bounds,
     resolve_param,
     resolve_pair_param,
     sample_center_in_bounds,
@@ -23,14 +24,14 @@ from metashapes.generators.samplers.utils import (
 class RectangleSampler(ShapeSampler):
     shape_class = Rectangle
 
-    def sample(self, rng, canvas: Canvas, config) -> Rectangle:
+    def sample(self, rng, lattice: Lattice, config) -> Rectangle:
         min_size = config.min_shape_size or 0.1
         min_feature = config.min_feature_size or 0.0
 
         fixed = get_all_fixed_param(config, self.shape_class)
         ranges = get_all_param_range(config, self.shape_class)
 
-        x0, y0, x1, y1 = canvas.inner_bounds
+        x0, y0, x1, y1 = lattice_inner_bounds(lattice)
         iw, ih = x1 - x0, y1 - y0
 
         for _ in range(config.max_tries_per_shape):
@@ -88,14 +89,14 @@ class RectangleSampler(ShapeSampler):
 class IsoscelesTrapezoidSampler(ShapeSampler):
     shape_class = IsoscelesTrapezoid
 
-    def sample(self, rng, canvas: Canvas, config) -> IsoscelesTrapezoid:
+    def sample(self, rng, lattice: Lattice, config) -> IsoscelesTrapezoid:
         min_size = config.min_shape_size or 0.1
         min_feature = config.min_feature_size or 0.0
 
         fixed = get_all_fixed_param(config, self.shape_class)
         ranges = get_all_param_range(config, self.shape_class)
 
-        x0, y0, x1, y1 = canvas.inner_bounds
+        x0, y0, x1, y1 = lattice_inner_bounds(lattice)
         iw, ih = x1 - x0, y1 - y0
 
         for _ in range(config.max_tries_per_shape):
@@ -171,14 +172,14 @@ class IsoscelesTrapezoidSampler(ShapeSampler):
 class ConvexQuadSampler(ShapeSampler):
     shape_class = ConvexQuad
 
-    def sample(self, rng, canvas: Canvas, config) -> ConvexQuad:
+    def sample(self, rng, lattice: Lattice, config) -> ConvexQuad:
         min_size = config.min_shape_size or 0.1
         min_feature = config.min_feature_size or 0.0
 
         fixed = get_all_fixed_param(config, self.shape_class)
         ranges = get_all_param_range(config, self.shape_class)
 
-        x0, y0, x1, y1 = canvas.inner_bounds
+        x0, y0, x1, y1 = lattice_inner_bounds(lattice)
         iw, ih = x1 - x0, y1 - y0
 
         for _ in range(config.max_tries_per_shape):

@@ -12,12 +12,15 @@ from metashapes.shape.transforms import Translate, Rotate, Scale
 
 def translate_to_shapely(shape: Translate, shape_to_shapely_fn) -> BaseGeometry:
     geom = shape_to_shapely_fn(shape.shape)
-    return shp_translate(geom, xoff=shape.dx, yoff=shape.dy)
+    return shp_translate(geom, xoff=float(shape.dx), yoff=float(shape.dy))
 
 def rotate_to_shapely(shape: Rotate, shape_to_shapely_fn) -> BaseGeometry:
     geom = shape_to_shapely_fn(shape.shape)
-    return shp_rotate(geom, shape.angle, origin=shape.origin)
+    ox, oy = shape.origin.tolist()
+    return shp_rotate(geom, float(shape.angle), origin=(ox, oy))
 
 def scale_to_shapely(shape: Scale, shape_to_shapely_fn) -> BaseGeometry:
     geom = shape_to_shapely_fn(shape.shape)
-    return shp_scale(geom, xfact=shape.s, yfact=shape.s, origin=shape.origin)
+    s = float(shape.s)
+    ox, oy = shape.origin.tolist()
+    return shp_scale(geom, xfact=s, yfact=s, origin=(ox, oy))

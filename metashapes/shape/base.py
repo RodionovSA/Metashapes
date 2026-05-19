@@ -133,15 +133,6 @@ class Shape(nn.Module):
 
         return shape_cls.from_parametric(data)
     
-    # Adapters to other representations
-    def to_shapely(self) -> BaseGeometry:
-        """
-        Convert this Shape into a Shapely geometry.
-        """
-        from metashapes.adapters import shape_to_shapely
-        shape_plain = Shape.from_parametric(self.to_parametric())
-        return shape_to_shapely(shape_plain)
-    
 
 """ Helper functions for data conversion and serialization. """
 def to_plain_data(x: torch.Tensor):
