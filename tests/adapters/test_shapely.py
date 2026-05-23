@@ -6,7 +6,7 @@ import torch
 
 from metashapes.adapters.shapely.dispatch import shape_to_shapely
 from metashapes.shape.primitives.quads import Rectangle, ConvexQuad, IsoscelesTrapezoid
-from metashapes.shape.primitives.conics import Ellipse
+from metashapes.shape.primitives.conics import Ellipse, Egg
 from metashapes.shape.primitives.polygons import RegularPolygon
 from metashapes.shape.primitives.junctions import Cross, TShape
 from metashapes.shape.primitives.periodic import Stripe
@@ -49,6 +49,23 @@ class TestPrimitivesToShapely:
         cx, cy = _centroid(geom)
         assert cx == pytest.approx(1.0, abs=0.01)
         assert cy == pytest.approx(-2.0, abs=0.01)
+
+    def test_egg(self):
+        # area ≈ π * a * (b_top + b_bot) / 2 = π * a * height / 2
+        shape = Egg(center=[0.0, 0.0], width=2.0, height=1.0, skew=0.4)
+        geom = shape_to_shapely(shape)
+        assert not geom.is_empty
+        a = 1.0
+        expected_area = math.pi * a * 0.5  # π * a * height/2
+        assert geom.area == pytest.approx(expected_area, rel=0.02)
+
+    def test_egg_centroid(self):
+        shape = Egg(center=[1.0, -2.0], width=1.0, height=0.8, skew=0.3)
+        geom = shape_to_shapely(shape)
+        cx, cy = _centroid(geom)
+        assert cx == pytest.approx(1.0, abs=0.02)
+        # centroid y is above center when skew > 0 (top half is larger)
+        assert cy > -2.0
 
     def test_convex_quad(self):
         # u=[0.5,0], v=[0,0.5] with alpha=beta=0 → 1×1 square at origin

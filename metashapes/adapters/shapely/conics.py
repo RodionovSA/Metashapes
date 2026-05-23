@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
+import numpy as np
 from shapely.affinity import rotate as shp_rotate
 from shapely.affinity import scale as shp_scale
 from shapely.affinity import translate as shp_translate
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon
 from shapely.geometry.base import BaseGeometry
 
 import metashapes.shape.primitives as prim
@@ -21,3 +22,27 @@ def ellipse_to_shapely(shape: prim.Ellipse) -> BaseGeometry:
     geom = shp_rotate(geom, angle, origin=(0.0, 0.0))
     geom = shp_translate(geom, xoff=cx, yoff=cy)
     return geom
+
+
+def egg_to_shapely(shape: prim.Egg) -> BaseGeometry:
+    cx, cy = shape.center.tolist()
+    a = shape.width.item() / 2.0
+    skew = shape.skew.item()
+    h_half = shape.height.item() / 2.0
+    b_top = h_half * (1.0 + skew)
+    b_bot = h_half * (1.0 - skew)
+    angle = shape.angle.item()
+
+    n = 64
+    t_upper = np.linspace(0.0, np.pi, n, endpoint=False)
+    t_lower = np.linspace(np.pi, 2.0 * np.pi, n, endpoint=False)
+
+    xs = np.concatenate([a * np.cos(t_upper), a * np.cos(t_lower)])
+    ys = np.concatenate([b_top * np.sin(t_upper), b_bot * np.sin(t_lower)])
+
+    theta = np.deg2rad(angle)
+    c, s = np.cos(theta), np.sin(theta)
+    xs_rot = xs * c - ys * s + cx
+    ys_rot = xs * s + ys * c + cy
+
+    return Polygon(zip(xs_rot, ys_rot))

@@ -107,6 +107,7 @@ class TestShapeTypes:
     @pytest.mark.parametrize("shape_name", [
         "Rectangle",
         "Ellipse",
+        "Egg",
         "RegularPolygon",
         "ConvexQuad",
         "IsoscelesTrapezoid",

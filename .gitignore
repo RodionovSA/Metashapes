@@ -3,3 +3,6 @@
 CLAUDE.md
 .gitignore
 .claude
+.venv/
+*.egg-info
+graphify-out/

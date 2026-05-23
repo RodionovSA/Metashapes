@@ -17,7 +17,7 @@ from metashapes.generators.samplers.utils import (
     resolve_pair_param,
     sample_center_in_bounds,
 )
-from metashapes.shape.primitives import Ellipse
+from metashapes.shape.primitives import Ellipse, Egg
 
 
 @register_shape_sampler
@@ -71,3 +71,75 @@ class EllipseSampler(ShapeSampler):
             return Ellipse(center=(cx, cy), axes=(ax, ay), angle=angle)
 
         raise RuntimeError("ellipse_too_large_for_canvas")
+
+
+@register_shape_sampler
+class EggSampler(ShapeSampler):
+    shape_class = Egg
+
+    def sample(self, rng, lattice: Lattice, config) -> Egg:
+        min_size = config.min_shape_size or 0.1
+        min_feature = config.min_feature_size or 0.0
+
+        fixed = get_all_fixed_param(config, self.shape_class)
+        ranges = get_all_param_range(config, self.shape_class)
+
+        x0, y0, x1, y1 = lattice_inner_bounds(lattice)
+        iw, ih = x1 - x0, y1 - y0
+
+        for _ in range(config.max_tries_per_shape):
+            width = resolve_param(
+                rng,
+                fixed_value=fixed['width'],
+                user_range=ranges['width'],
+                default_range=intersect_ranges((min_size, iw), (min_feature, iw)),
+            )
+
+            height = resolve_param(
+                rng,
+                fixed_value=fixed['height'],
+                user_range=ranges['height'],
+                default_range=intersect_ranges((min_size, ih), (min_feature, ih)),
+            )
+
+            skew = resolve_param(
+                rng,
+                fixed_value=fixed['skew'],
+                user_range=ranges['skew'],
+                default_range=(-0.5, 0.5),
+            )
+
+            angle = resolve_param(
+                rng,
+                fixed_value=fixed['angle'],
+                user_range=ranges['angle'],
+                default_range=(0.0, 360.0),
+            )
+
+            a = width / 2.0
+            b_top = height / 2.0 * (1.0 + skew)
+            b_bot = height / 2.0 * (1.0 - skew)
+            theta = np.deg2rad(angle)
+            c_a, s_a = np.cos(theta), np.sin(theta)
+
+            b_max = max(b_top, b_bot)
+            corners = [(a, b_top), (-a, b_top), (a, -b_bot), (-a, -b_bot)]
+            rotated_xs = [p[0] * c_a - p[1] * s_a for p in corners]
+            rotated_ys = [p[0] * s_a + p[1] * c_a for p in corners]
+            dx = max(abs(rx) for rx in rotated_xs)
+            dy = max(abs(ry) for ry in rotated_ys)
+
+            if dx > iw / 2 or dy > ih / 2:
+                continue
+
+            cx, cy = sample_center_in_bounds(
+                rng,
+                fixed_center=fixed['center'],
+                center_range=ranges['center'],
+                x_bounds=(x0 + dx, x1 - dx),
+                y_bounds=(y0 + dy, y1 - dy),
+            )
+
+            return Egg(center=(cx, cy), width=width, height=height, skew=skew, angle=angle)
+
+        raise RuntimeError("egg_too_large_for_canvas")

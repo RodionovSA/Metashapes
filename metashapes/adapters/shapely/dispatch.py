@@ -16,7 +16,7 @@ from .quads import (
     isosceles_trapezoid_to_shapely,
 )
 from .polygons import regular_polygon_to_shapely
-from .conics import ellipse_to_shapely
+from .conics import ellipse_to_shapely, egg_to_shapely
 from .junctions import cross_to_shapely, tshape_to_shapely
 from .periodic import stripe_to_shapely
 from .booleans import (
@@ -39,6 +39,9 @@ def shape_to_shapely(shape: Shape) -> BaseGeometry:
 
     if isinstance(shape, prim.Ellipse):
         return ellipse_to_shapely(shape)
+
+    if isinstance(shape, prim.Egg):
+        return egg_to_shapely(shape)
 
     if isinstance(shape, prim.RegularPolygon):
         return regular_polygon_to_shapely(shape)
