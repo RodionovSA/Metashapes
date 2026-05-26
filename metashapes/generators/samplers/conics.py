@@ -17,7 +17,7 @@ from metashapes.generators.samplers.utils import (
     resolve_pair_param,
     sample_center_in_bounds,
 )
-from metashapes.shape.primitives import Ellipse, Egg
+from metashapes.shape.primitives import Ellipse, Egg, Stadium
 
 
 @register_shape_sampler
@@ -143,3 +143,67 @@ class EggSampler(ShapeSampler):
             return Egg(center=(cx, cy), width=width, height=height, skew=skew, angle=angle)
 
         raise RuntimeError("egg_too_large_for_canvas")
+
+
+@register_shape_sampler
+class StadiumSampler(ShapeSampler):
+    shape_class = Stadium
+
+    def sample(self, rng, lattice: Lattice, config) -> Stadium:
+        min_size = config.min_shape_size or 0.1
+        min_feature = config.min_feature_size or 0.0
+
+        fixed = get_all_fixed_param(config, self.shape_class)
+        ranges = get_all_param_range(config, self.shape_class)
+
+        x0, y0, x1, y1 = lattice_inner_bounds(lattice)
+        iw, ih = x1 - x0, y1 - y0
+
+        for _ in range(config.max_tries_per_shape):
+            length = resolve_param(
+                rng,
+                fixed_value=fixed['length'],
+                user_range=ranges['length'],
+                default_range=intersect_ranges((min_size, iw), (min_feature, iw)),
+            )
+
+            width_max = min(length, ih)
+            width = resolve_param(
+                rng,
+                fixed_value=fixed['width'],
+                user_range=ranges['width'],
+                default_range=intersect_ranges((min_feature, width_max), (min_size, width_max)),
+            )
+
+            if width > length:
+                continue
+
+            angle = resolve_param(
+                rng,
+                fixed_value=fixed['angle'],
+                user_range=ranges['angle'],
+                default_range=(0.0, 360.0),
+            )
+
+            half_len = length / 2.0
+            radius = width / 2.0
+            theta = np.deg2rad(angle)
+            c_a, s_a = np.cos(theta), np.sin(theta)
+
+            hw = abs(half_len * c_a) + abs(radius * s_a)
+            hh = abs(half_len * s_a) + abs(radius * c_a)
+
+            if hw > iw / 2 or hh > ih / 2:
+                continue
+
+            cx, cy = sample_center_in_bounds(
+                rng,
+                fixed_center=fixed['center'],
+                center_range=ranges['center'],
+                x_bounds=(x0 + hw, x1 - hw),
+                y_bounds=(y0 + hh, y1 - hh),
+            )
+
+            return Stadium(center=(cx, cy), length=length, width=width, angle=angle)
+
+        raise RuntimeError("stadium_too_large_for_canvas")

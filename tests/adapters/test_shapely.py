@@ -6,8 +6,8 @@ import torch
 
 from metashapes.adapters.shapely.dispatch import shape_to_shapely
 from metashapes.shape.primitives.quads import Rectangle, ConvexQuad, IsoscelesTrapezoid
-from metashapes.shape.primitives.conics import Ellipse, Egg
-from metashapes.shape.primitives.polygons import RegularPolygon
+from metashapes.shape.primitives.conics import Ellipse, Egg, Stadium
+from metashapes.shape.primitives.polygons import RegularPolygon, Triangle
 from metashapes.shape.primitives.junctions import Cross, TShape
 from metashapes.shape.primitives.periodic import Stripe
 from metashapes.shape.boolean import Union, Intersection, Difference
@@ -67,6 +67,30 @@ class TestPrimitivesToShapely:
         # centroid y is above center when skew > 0 (top half is larger)
         assert cy > -2.0
 
+    def test_stadium(self):
+        # length=2.0, width=1.0 → radius=0.5, span=1.0
+        # area = π * r² + 2 * r * span = π * 0.25 + 1.0
+        import math
+        shape = Stadium(center=[0.0, 0.0], length=2.0, width=1.0)
+        geom = shape_to_shapely(shape)
+        assert not geom.is_empty
+        expected_area = math.pi * 0.5 ** 2 + 2 * 0.5 * 1.0
+        assert geom.area == pytest.approx(expected_area, abs=0.02)
+
+    def test_stadium_centroid(self):
+        shape = Stadium(center=[1.0, -2.0], length=2.0, width=0.8)
+        geom = shape_to_shapely(shape)
+        cx, cy = _centroid(geom)
+        assert cx == pytest.approx(1.0, abs=0.01)
+        assert cy == pytest.approx(-2.0, abs=0.01)
+
+    def test_stadium_degenerate_circle(self):
+        # length == width → circle of radius 0.5
+        import math
+        shape = Stadium(center=[0.0, 0.0], length=1.0, width=1.0)
+        geom = shape_to_shapely(shape)
+        assert geom.area == pytest.approx(math.pi * 0.5 ** 2, abs=0.02)
+
     def test_convex_quad(self):
         # u=[0.5,0], v=[0,0.5] with alpha=beta=0 → 1×1 square at origin
         shape = ConvexQuad(
@@ -92,6 +116,27 @@ class TestPrimitivesToShapely:
         assert not geom.is_empty
         # area = 0.5 * (bottom + top) * height = 0.5 * 3 * 1 = 1.5
         assert geom.area == pytest.approx(1.5, abs=1e-4)
+
+    def test_triangle_equilateral_area(self):
+        # Equilateral: area = base² * sqrt(3) / 4
+        shape = Triangle(center=[0.0, 0.0], base=2.0, alpha=60.0, beta=60.0)
+        geom = shape_to_shapely(shape)
+        assert not geom.is_empty
+        assert geom.area == pytest.approx(math.sqrt(3), abs=0.01)
+
+    def test_triangle_centroid(self):
+        shape = Triangle(center=[1.0, -2.0], base=1.5, alpha=60.0, beta=60.0)
+        geom = shape_to_shapely(shape)
+        cx, cy = _centroid(geom)
+        assert cx == pytest.approx(1.0, abs=0.01)
+        assert cy == pytest.approx(-2.0, abs=0.01)
+
+    def test_triangle_corner_radius_reduces_area(self):
+        shape_plain = Triangle(center=[0.0, 0.0], base=2.0, alpha=60.0, beta=60.0)
+        shape_rounded = Triangle(center=[0.0, 0.0], base=2.0, alpha=60.0, beta=60.0, corner_radius=0.05)
+        geom_plain = shape_to_shapely(shape_plain)
+        geom_rounded = shape_to_shapely(shape_rounded)
+        assert geom_rounded.area < geom_plain.area
 
     def test_regular_polygon_square(self):
         shape = RegularPolygon(center=torch.zeros(2), n=4, side_length=torch.tensor(1.0))

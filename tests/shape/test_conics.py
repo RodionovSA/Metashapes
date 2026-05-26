@@ -4,7 +4,7 @@ import math
 import pytest
 import torch
 from metashapes.shape import Shape
-from metashapes.shape.primitives.conics import Ellipse, Egg
+from metashapes.shape.primitives.conics import Ellipse, Egg, Stadium
 from .conftest import assert_inside, assert_outside, assert_round_trip, assert_bounds_contain, sdf_at
 
 
@@ -163,3 +163,78 @@ class TestEgg:
     def test_round_trip(self):
         e = Egg(center=[0.1, -0.2], width=0.9, height=0.7, skew=0.25, angle=15.0)
         assert_round_trip(e)
+
+
+class TestStadium:
+    def test_center_is_inside(self):
+        s = Stadium(center=[0.0, 0.0], length=2.0, width=1.0)
+        assert_inside(s, [(0.0, 0.0)])
+
+    def test_far_point_is_outside(self):
+        s = Stadium(center=[0.0, 0.0], length=2.0, width=1.0)
+        assert_outside(s, [(3.0, 0.0), (0.0, 2.0), (-2.0, -1.0)])
+
+    def test_cap_tip_boundary(self):
+        # SDF ≈ 0 at right cap tip (length/2, 0)
+        s = Stadium(center=[0.0, 0.0], length=2.0, width=1.0)
+        d = sdf_at(s, 1.0, 0.0)
+        assert abs(d) < 1e-4
+
+    def test_side_boundary(self):
+        # SDF ≈ 0 at the widest side (0, radius)
+        s = Stadium(center=[0.0, 0.0], length=2.0, width=1.0)
+        d = sdf_at(s, 0.0, 0.5)
+        assert abs(d) < 1e-4
+
+    def test_center_sdf_value(self):
+        # Center of stadium is exactly -radius from the boundary
+        s = Stadium(center=[0.0, 0.0], length=2.0, width=1.0)
+        d = sdf_at(s, 0.0, 0.0)
+        assert d == pytest.approx(-0.5, abs=5e-4)
+
+    def test_degenerate_circle(self):
+        # length == width → stadium is a circle; SDF matches circle formula
+        s = Stadium(center=[0.0, 0.0], length=1.0, width=1.0)
+        d = sdf_at(s, 0.5, 0.0)
+        assert abs(d) < 1e-4
+
+    def test_offset_center(self):
+        s = Stadium(center=[1.0, -0.5], length=2.0, width=0.8)
+        assert_inside(s, [(1.0, -0.5)])
+        assert_outside(s, [(0.0, 0.0)])
+
+    def test_rotated_stadium(self):
+        # After 90° rotation the long axis is vertical
+        s = Stadium(center=[0.0, 0.0], length=2.0, width=0.5, angle=90.0)
+        assert_inside(s, [(0.0, 0.6)])    # inside along new long axis
+        assert_outside(s, [(0.4, 0.0)])   # outside along new short axis
+
+    def test_bounds(self):
+        s = Stadium(center=[0.0, 0.0], length=2.0, width=1.0)
+        (x0, y0), (x1, y1) = s.bounds()
+        assert x0 == pytest.approx(-1.0, abs=1e-5)
+        assert x1 == pytest.approx(1.0, abs=1e-5)
+        assert y0 == pytest.approx(-0.5, abs=1e-5)
+        assert y1 == pytest.approx(0.5, abs=1e-5)
+
+    def test_bounds_contain_interior(self):
+        s = Stadium(center=[0.5, -0.3], length=1.5, width=0.6, angle=35.0)
+        assert_bounds_contain(s, [(0.5, -0.3)])
+
+    def test_invalid_length(self):
+        with pytest.raises(ValueError):
+            Stadium(center=[0.0, 0.0], length=0.0, width=0.5)
+        with pytest.raises(ValueError):
+            Stadium(center=[0.0, 0.0], length=-1.0, width=0.5)
+
+    def test_invalid_width(self):
+        with pytest.raises(ValueError):
+            Stadium(center=[0.0, 0.0], length=1.0, width=0.0)
+
+    def test_length_less_than_width(self):
+        with pytest.raises(ValueError):
+            Stadium(center=[0.0, 0.0], length=0.5, width=1.0)
+
+    def test_round_trip(self):
+        s = Stadium(center=[0.2, -0.1], length=1.8, width=0.6, angle=20.0)
+        assert_round_trip(s)

@@ -11,6 +11,28 @@ from shapely.geometry.base import BaseGeometry
 import metashapes.shape.primitives as prim
 from .helpers import round_corners
 
+
+def triangle_to_shapely(shape: prim.Triangle) -> BaseGeometry:
+    cx, cy = shape.center.tolist()
+    angle = shape.angle.item()
+    rr = shape.corner_radius.item()
+
+    (Ax, Ay), (Bx, By), (Cx, Cy) = shape._vertices()
+
+    theta = np.deg2rad(angle)
+    c_t, s_t = np.cos(theta), np.sin(theta)
+
+    def _to_world(vx, vy):
+        vx, vy = vx.item(), vy.item()
+        return (cx + vx * c_t - vy * s_t, cy + vx * s_t + vy * c_t)
+
+    pts = [_to_world(Ax, Ay), _to_world(Bx, By), _to_world(Cx, Cy)]
+    geom = Polygon(pts)
+    if rr > 0:
+        return round_corners(geom, radius=rr, mode="inner")
+    return geom
+
+
 def regular_polygon_to_shapely(shape: prim.RegularPolygon) -> BaseGeometry:
     cx, cy = shape.center.tolist()
     n = shape.n

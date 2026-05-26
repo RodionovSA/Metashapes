@@ -7,7 +7,7 @@ import numpy as np
 from shapely.affinity import rotate as shp_rotate
 from shapely.affinity import scale as shp_scale
 from shapely.affinity import translate as shp_translate
-from shapely.geometry import Point, Polygon
+from shapely.geometry import LineString, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 
 import metashapes.shape.primitives as prim
@@ -46,3 +46,19 @@ def egg_to_shapely(shape: prim.Egg) -> BaseGeometry:
     ys_rot = xs * s + ys * c + cy
 
     return Polygon(zip(xs_rot, ys_rot))
+
+
+def stadium_to_shapely(shape: prim.Stadium) -> BaseGeometry:
+    cx, cy = shape.center.tolist()
+    radius = shape.width.item() / 2.0
+    half_span = max(shape.length.item() / 2.0 - radius, 0.0)
+    angle = shape.angle.item()
+
+    if half_span == 0.0:
+        geom = Point(0.0, 0.0).buffer(radius)
+    else:
+        geom = LineString([(-half_span, 0.0), (half_span, 0.0)]).buffer(radius)
+
+    geom = shp_rotate(geom, angle, origin=(0.0, 0.0))
+    geom = shp_translate(geom, xoff=cx, yoff=cy)
+    return geom

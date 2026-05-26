@@ -108,6 +108,8 @@ class TestShapeTypes:
         "Rectangle",
         "Ellipse",
         "Egg",
+        "Stadium",
+        "Triangle",
         "RegularPolygon",
         "ConvexQuad",
         "IsoscelesTrapezoid",

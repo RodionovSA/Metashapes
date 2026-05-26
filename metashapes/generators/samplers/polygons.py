@@ -16,7 +16,7 @@ from metashapes.generators.samplers.utils import (
     resolve_param,
     sample_center_in_bounds,
 )
-from metashapes.shape.primitives import RegularPolygon
+from metashapes.shape.primitives import RegularPolygon, Triangle
 
 
 @register_shape_sampler
@@ -97,3 +97,110 @@ class RegularPolygonSampler(ShapeSampler):
             )
 
         raise RuntimeError("regular_polygon_too_large_for_canvas")
+
+
+@register_shape_sampler
+class TriangleSampler(ShapeSampler):
+    shape_class = Triangle
+
+    def sample(self, rng, lattice: Lattice, config) -> Triangle:
+        min_size = config.min_shape_size or 0.1
+        min_feature = config.min_feature_size or 0.0
+
+        fixed = get_all_fixed_param(config, self.shape_class)
+        ranges = get_all_param_range(config, self.shape_class)
+
+        x0, y0, x1, y1 = lattice_inner_bounds(lattice)
+        iw, ih = x1 - x0, y1 - y0
+
+        for _ in range(config.max_tries_per_shape):
+            base = resolve_param(
+                rng,
+                fixed_value=fixed['base'],
+                user_range=ranges['base'],
+                default_range=intersect_ranges((min_size, min(iw, ih)), (min_feature, min(iw, ih))),
+            )
+
+            alpha = resolve_param(
+                rng,
+                fixed_value=fixed['alpha'],
+                user_range=ranges['alpha'],
+                default_range=(20.0, 140.0),
+            )
+
+            beta_max = min(140.0, 160.0 - alpha)
+            if beta_max <= 20.0:
+                continue
+
+            beta = resolve_param(
+                rng,
+                fixed_value=fixed['beta'],
+                user_range=ranges['beta'],
+                default_range=(20.0, beta_max),
+            )
+
+            if alpha + beta >= 180.0:
+                continue
+
+            angle = resolve_param(
+                rng,
+                fixed_value=fixed['angle'],
+                user_range=ranges['angle'],
+                default_range=(0.0, 360.0),
+            )
+
+            a_rad = math.radians(alpha)
+            b_rad = math.radians(beta)
+            sin_ab = math.sin(a_rad + b_rad)
+            inradius = base * math.sin(a_rad) * math.sin(b_rad) / (
+                sin_ab + math.sin(a_rad) + math.sin(b_rad)
+            )
+
+            corner_radius = resolve_param(
+                rng,
+                fixed_value=fixed['corner_radius'],
+                user_range=ranges['corner_radius'],
+                default_range=(0.0, inradius * 0.8),
+            )
+            corner_radius = min(corner_radius, inradius * 0.99)
+
+            # Outer vertices in local centroid frame
+            cx_apex = base / 2.0 - base * math.sin(a_rad) * math.cos(b_rad) / sin_ab
+            cy_apex = base * math.sin(a_rad) * math.sin(b_rad) / sin_ab
+            gcx = cx_apex / 3.0
+            gcy = cy_apex / 3.0
+
+            local_pts = [
+                (-base / 2.0 - gcx, -gcy),
+                (base / 2.0 - gcx, -gcy),
+                (cx_apex - gcx, cy_apex - gcy),
+            ]
+
+            theta = math.radians(angle)
+            c_t, s_t = math.cos(theta), math.sin(theta)
+            rotated_xs = [p[0] * c_t - p[1] * s_t for p in local_pts]
+            rotated_ys = [p[0] * s_t + p[1] * c_t for p in local_pts]
+            dx = max(abs(rx) for rx in rotated_xs)
+            dy = max(abs(ry) for ry in rotated_ys)
+
+            if dx > iw / 2 or dy > ih / 2:
+                continue
+
+            cxc, cyc = sample_center_in_bounds(
+                rng,
+                fixed_center=fixed['center'],
+                center_range=ranges['center'],
+                x_bounds=(x0 + dx, x1 - dx),
+                y_bounds=(y0 + dy, y1 - dy),
+            )
+
+            return Triangle(
+                center=(cxc, cyc),
+                base=base,
+                alpha=alpha,
+                beta=beta,
+                angle=angle,
+                corner_radius=corner_radius,
+            )
+
+        raise RuntimeError("triangle_too_large_for_canvas")
