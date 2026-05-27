@@ -4,8 +4,34 @@
 from __future__ import annotations
 from typing import Literal
 
+import torch
+
 from shapely.geometry import Polygon, MultiPolygon
 from shapely.geometry.base import BaseGeometry
+
+
+def as_float(t) -> float:
+    """Safely extract a scalar tensor (any device/grad state) to Python float.
+
+    Calls ``.detach().cpu()`` before ``.item()`` so the function is safe
+    for CUDA tensors and for ``nn.Parameter`` values inside autograd graphs.
+    Plain Python numbers are passed through ``float()`` unchanged.
+    """
+    if isinstance(t, torch.Tensor):
+        return t.detach().cpu().item()
+    return float(t)
+
+
+def as_list(t) -> list:
+    """Safely extract a tensor (any device/grad state) to a Python list.
+
+    Calls ``.detach().cpu()`` before ``.tolist()`` so the function is safe
+    for CUDA tensors and for ``nn.Parameter`` values inside autograd graphs.
+    Plain sequences are passed through ``list()`` unchanged.
+    """
+    if isinstance(t, torch.Tensor):
+        return t.detach().cpu().tolist()
+    return list(t)
 
 
 RoundMode = Literal["inner", "outer", "both"]

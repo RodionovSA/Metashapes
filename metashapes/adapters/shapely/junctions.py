@@ -10,6 +10,7 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
 import metashapes.shape.primitives as prim
+from .helpers import as_float, as_list
 
 def _rounded_box(hx: float, hy: float, rr: float) -> BaseGeometry:
         if rr == 0:
@@ -17,11 +18,12 @@ def _rounded_box(hx: float, hy: float, rr: float) -> BaseGeometry:
         return box(-(hx - rr), -(hy - rr), hx - rr, hy - rr).buffer(rr, join_style=1)
 
 def cross_to_shapely(shape: prim.Cross) -> BaseGeometry:
-    cx, cy = shape.center.tolist()
-    length = shape.length.item()
-    width = shape.width.item()
-    ro = shape.outer_corner_radius.item()
-    ri = shape.inner_corner_radius.item()
+    cx, cy = as_list(shape.center)
+    length = as_float(shape.length)
+    width = as_float(shape.width)
+    ro = as_float(shape.outer_corner_radius)
+    ri = as_float(shape.inner_corner_radius)
+    angle = as_float(shape.angle)
 
     if length <= 0:
         raise ValueError("length must be positive")
@@ -73,18 +75,19 @@ def cross_to_shapely(shape: prim.Cross) -> BaseGeometry:
 
         geom = unary_union([geom, *patches])
 
-    if shape.angle.item() != 0:
-        geom = shp_rotate(geom, shape.angle.item(), origin=(0.0, 0.0))
+    if angle != 0:
+        geom = shp_rotate(geom, angle, origin=(0.0, 0.0))
 
     geom = shp_translate(geom, xoff=cx, yoff=cy)
     return geom
 
 def tshape_to_shapely(shape: prim.TShape) -> BaseGeometry:
-    cx, cy = shape.center.tolist()
-    length = shape.length.item()
-    width = shape.width.item()
-    ro = shape.outer_corner_radius.item()
-    ri = shape.inner_corner_radius.item()
+    cx, cy = as_list(shape.center)
+    length = as_float(shape.length)
+    width = as_float(shape.width)
+    ro = as_float(shape.outer_corner_radius)
+    ri = as_float(shape.inner_corner_radius)
+    angle = as_float(shape.angle)
 
     if length <= 0:
         raise ValueError("length must be positive")
@@ -127,8 +130,8 @@ def tshape_to_shapely(shape: prim.TShape) -> BaseGeometry:
         ]
         geom = unary_union([geom, *patches])
 
-    if shape.angle.item() != 0:
-        geom = shp_rotate(geom, shape.angle.item(), origin=(0.0, 0.0))
+    if angle != 0:
+        geom = shp_rotate(geom, angle, origin=(0.0, 0.0))
 
     geom = shp_translate(geom, xoff=cx, yoff=cy)
     return geom

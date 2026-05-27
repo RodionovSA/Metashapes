@@ -11,11 +11,12 @@ from shapely.geometry import LineString, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 
 import metashapes.shape.primitives as prim
+from .helpers import as_float, as_list
 
 def ellipse_to_shapely(shape: prim.Ellipse) -> BaseGeometry:
-    cx, cy = shape.center.tolist()
-    a, b = shape.axes.tolist()
-    angle = shape.angle.item()
+    cx, cy = as_list(shape.center)
+    a, b = as_list(shape.axes)
+    angle = as_float(shape.angle)
 
     geom = Point(0.0, 0.0).buffer(1.0, quad_segs=64 // 4)
     geom = shp_scale(geom, xfact=a*0.5, yfact=b*0.5, origin=(0.0, 0.0))
@@ -25,13 +26,13 @@ def ellipse_to_shapely(shape: prim.Ellipse) -> BaseGeometry:
 
 
 def egg_to_shapely(shape: prim.Egg) -> BaseGeometry:
-    cx, cy = shape.center.tolist()
-    a = shape.width.item() / 2.0
-    skew = shape.skew.item()
-    h_half = shape.height.item() / 2.0
+    cx, cy = as_list(shape.center)
+    a = as_float(shape.width) / 2.0
+    skew = as_float(shape.skew)
+    h_half = as_float(shape.height) / 2.0
     b_top = h_half * (1.0 + skew)
     b_bot = h_half * (1.0 - skew)
-    angle = shape.angle.item()
+    angle = as_float(shape.angle)
 
     n = 64
     t_upper = np.linspace(0.0, np.pi, n, endpoint=False)
@@ -49,10 +50,10 @@ def egg_to_shapely(shape: prim.Egg) -> BaseGeometry:
 
 
 def stadium_to_shapely(shape: prim.Stadium) -> BaseGeometry:
-    cx, cy = shape.center.tolist()
-    radius = shape.width.item() / 2.0
-    half_span = max(shape.length.item() / 2.0 - radius, 0.0)
-    angle = shape.angle.item()
+    cx, cy = as_list(shape.center)
+    radius = as_float(shape.width) / 2.0
+    half_span = max(as_float(shape.length) / 2.0 - radius, 0.0)
+    angle = as_float(shape.angle)
 
     if half_span == 0.0:
         geom = Point(0.0, 0.0).buffer(radius)

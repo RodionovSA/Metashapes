@@ -10,16 +10,16 @@ from shapely.geometry.base import BaseGeometry
 from shapely.geometry.polygon import orient
 
 import metashapes.shape.primitives as prim
-from .helpers import round_corners
+from .helpers import as_float, as_list, round_corners
 
 def convex_quad_to_shapely(shape: prim.ConvexQuad) -> BaseGeometry:
-    cx, cy = shape.center.tolist()
-    ux0, uy0 = shape.u.tolist()
-    vx0, vy0 = shape.v.tolist()
-    alpha = shape.alpha.item()
-    beta = shape.beta.item()
-    angle = shape.angle.item()
-    rr = shape.corner_radius.item()
+    cx, cy = as_list(shape.center)
+    ux0, uy0 = as_list(shape.u)
+    vx0, vy0 = as_list(shape.v)
+    alpha = as_float(shape.alpha)
+    beta = as_float(shape.beta)
+    angle = as_float(shape.angle)
+    rr = as_float(shape.corner_radius)
 
     if rr < 0:
         raise ValueError("corner_radius must be non-negative")
@@ -59,10 +59,10 @@ def convex_quad_to_shapely(shape: prim.ConvexQuad) -> BaseGeometry:
     return round_corners(geom, radius=rr, mode="inner")
 
 def rectangle_to_shapely(shape: prim.Rectangle):
-    cx, cy = shape.center.tolist()
-    w, h = shape.size.tolist()
-    r = shape.corner_radius.item()
-    angle = shape.angle.item()
+    cx, cy = as_list(shape.center)
+    w, h = as_list(shape.size)
+    r = as_float(shape.corner_radius)
+    angle = as_float(shape.angle)
 
     if w <= 0 or h <= 0:
         raise ValueError("Rectangle size components must be positive")
@@ -88,12 +88,12 @@ def rectangle_to_shapely(shape: prim.Rectangle):
 
 
 def isosceles_trapezoid_to_shapely(shape: prim.IsoscelesTrapezoid) -> BaseGeometry:
-    cx, cy = shape.center.tolist()
-    wb = shape.bottom_width.item()
-    wt = shape.top_width.item()
-    h = shape.height.item()
-    angle = shape.angle.item()
-    rr = shape.corner_radius.item()
+    cx, cy = as_list(shape.center)
+    wb = as_float(shape.bottom_width)
+    wt = as_float(shape.top_width)
+    h = as_float(shape.height)
+    angle = as_float(shape.angle)
+    rr = as_float(shape.corner_radius)
 
     r1 = 0.5 * wb
     r2 = 0.5 * wt
@@ -115,4 +115,3 @@ def isosceles_trapezoid_to_shapely(shape: prim.IsoscelesTrapezoid) -> BaseGeomet
         return geom
 
     return round_corners(geom, radius=rr, mode="inner")
-

@@ -289,6 +289,81 @@ class UnitCell(nn.Module):
         cx, cy = self.lattice.to_cartesian(fc[:, 0], fc[:, 1])
         return cx.min().item(), cx.max().item(), cy.min().item(), cy.max().item()
 
+    # --- centering ---------------------------------------------------
+    def center_scene(self, method: str = "bbox") -> "UnitCell":
+        """Return a new UnitCell with the scene translated to the cell centre.
+
+        The scene is shifted so its centre aligns with the midpoint of the
+        unit-cell parallelogram, ``(a1 + a2) / 2``.
+
+        Parameters
+        ----------
+        method : {"bbox", "centroid"}
+            How to compute the scene centre:
+
+            ``"bbox"`` (default)
+                Midpoint of the scene's axis-aligned bounding box (AABB).
+                Fast and analytical; raises ``ValueError`` for shapes with
+                infinite extent (e.g. ``Stripe``).
+
+            ``"centroid"``
+                Area-weighted geometric centroid via the Shapely adapter.
+                More meaningful for irregular or asymmetric scenes (L-shapes,
+                crosses, cutouts).
+
+        Returns
+        -------
+        UnitCell
+            New unit cell with the scene translated; the original is unchanged.
+
+        Notes
+        -----
+        **Gradient flow:** the centering offset is stored as a non-learnable
+        buffer in the ``Translate`` wrapper.  Shape parameters that are
+        ``nn.Parameter`` (e.g. a learnable centre position) retain full
+        gradient flow through the SDF — centering only sets the initial
+        world-space position.  If you need the offset itself to be
+        differentiable, wrap it explicitly::
+
+            dx = nn.Parameter(torch.tensor(computed_dx))
+            UnitCell(lattice, scene.translate(dx, dy_param))
+
+        Raises
+        ------
+        ValueError
+            If ``method="bbox"`` and the scene has infinite bounds, or if
+            *method* is not recognised.
+        """
+        # Unit cell centre: midpoint of the parallelogram defined by a1 and a2
+        c = (self.lattice.a1 + self.lattice.a2) * 0.5
+        cell_cx, cell_cy = c[0].item(), c[1].item()
+
+        if method == "bbox":
+            (x0, y0), (x1, y1) = self.scene.bounds()
+            if not all(math.isfinite(v) for v in (x0, y0, x1, y1)):
+                raise ValueError(
+                    "Scene has infinite bounds; method='bbox' requires finite bounds. "
+                    "Use method='centroid' instead."
+                )
+            scene_cx = (x0 + x1) / 2
+            scene_cy = (y0 + y1) / 2
+
+        elif method == "centroid":
+            from metashapes.adapters.shapely import shape_to_shapely
+            geom = shape_to_shapely(self.scene)
+            scene_cx = geom.centroid.x
+            scene_cy = geom.centroid.y
+
+        else:
+            raise ValueError(
+                f"Unknown centering method {method!r}. "
+                "Choose 'bbox' or 'centroid'."
+            )
+
+        dx = cell_cx - scene_cx
+        dy = cell_cy - scene_cy
+        return UnitCell(self.lattice, self.scene.translate(dx, dy))
+
     # --- shapely adapter ---------------------------------------------
     def to_shapely(self):
         from shapely.geometry import Polygon

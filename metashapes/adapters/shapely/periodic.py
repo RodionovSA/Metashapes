@@ -7,6 +7,7 @@ from shapely.geometry import box
 from shapely.geometry.base import BaseGeometry
 
 import metashapes.shape.primitives as prim
+from .helpers import as_float
 
 # Large enough that distance calculations within any realistic unit cell
 # are exact, while keeping Shapely operations numerically stable.
@@ -21,8 +22,8 @@ def stripe_to_shapely(shape: prim.Stripe) -> BaseGeometry:
     very wide (axis='x') or very tall (axis='y') rectangle.  All
     within-cell distance computations are exact under this approximation.
     """
-    off = float(shape.offset)
-    half = float(shape.width) / 2.0
+    off = as_float(shape.offset)
+    half = as_float(shape.width) / 2.0
 
     if shape.axis == 'x':
         return box(-_LARGE, off - half, _LARGE, off + half)

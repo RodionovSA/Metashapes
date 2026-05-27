@@ -10,13 +10,13 @@ from shapely.geometry import Polygon
 from shapely.geometry.base import BaseGeometry
 
 import metashapes.shape.primitives as prim
-from .helpers import round_corners
+from .helpers import as_float, as_list, round_corners
 
 
 def triangle_to_shapely(shape: prim.Triangle) -> BaseGeometry:
-    cx, cy = shape.center.tolist()
-    angle = shape.angle.item()
-    rr = shape.corner_radius.item()
+    cx, cy = as_list(shape.center)
+    angle = as_float(shape.angle)
+    rr = as_float(shape.corner_radius)
 
     (Ax, Ay), (Bx, By), (Cx, Cy) = shape._vertices()
 
@@ -24,7 +24,7 @@ def triangle_to_shapely(shape: prim.Triangle) -> BaseGeometry:
     c_t, s_t = np.cos(theta), np.sin(theta)
 
     def _to_world(vx, vy):
-        vx, vy = vx.item(), vy.item()
+        vx, vy = as_float(vx), as_float(vy)
         return (cx + vx * c_t - vy * s_t, cy + vx * s_t + vy * c_t)
 
     pts = [_to_world(Ax, Ay), _to_world(Bx, By), _to_world(Cx, Cy)]
@@ -35,12 +35,12 @@ def triangle_to_shapely(shape: prim.Triangle) -> BaseGeometry:
 
 
 def star_to_shapely(shape: prim.Star) -> BaseGeometry:
-    cx, cy = shape.center.tolist()
-    R = shape.outer_radius.item()
-    r = shape.inner_radius.item()
-    angle_deg = shape.angle.item()
-    ocr = shape.outer_corner_radius.item()
-    icr = shape.inner_corner_radius.item()
+    cx, cy = as_list(shape.center)
+    R = as_float(shape.outer_radius)
+    r = as_float(shape.inner_radius)
+    angle_deg = as_float(shape.angle)
+    ocr = as_float(shape.outer_corner_radius)
+    icr = as_float(shape.inner_corner_radius)
     n = shape.n
     an = math.pi / n
 
@@ -60,11 +60,11 @@ def star_to_shapely(shape: prim.Star) -> BaseGeometry:
 
 
 def regular_polygon_to_shapely(shape: prim.RegularPolygon) -> BaseGeometry:
-    cx, cy = shape.center.tolist()
+    cx, cy = as_list(shape.center)
     n = shape.n
-    s = shape.side_length.item()
-    angle = shape.angle.item()
-    rr = shape.corner_radius.item()
+    s = as_float(shape.side_length)
+    angle = as_float(shape.angle)
+    rr = as_float(shape.corner_radius)
 
     R = s / (2.0 * np.sin(np.pi / n))
     phi = np.pi / 2.0
