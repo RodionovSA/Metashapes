@@ -1,8 +1,0 @@
-*__pycache__
-.pytest_cache
-CLAUDE.md
-.gitignore
-.claude
-.venv/
-*.egg-info
-graphify-out/
